@@ -1,0 +1,55 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "lerobot_robot_onero_h1"
+version = "0.1.0"
+description = "LeRobot adapter for the Onero H1 / SwitchBot H1 ROS2 SDK"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Apache-2.0" }
+authors = [
+  { name = "Onero H1 SDK contributors" }
+]
+keywords = ["lerobot", "ros2", "robotics", "onero", "h1", "switchbot"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "Intended Audience :: Science/Research",
+  "License :: OSI Approved :: Apache Software License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = [
+  "numpy>=1.24",
+  "opencv-python>=4.8",
+]
+
+[project.optional-dependencies]
+lerobot = ["lerobot"]
+dev = [
+  "pytest>=8",
+  "ruff>=0.6",
+]
+
+[project.scripts]
+onero-h1-print-observation = "onero_h1_lerobot.cli.print_observation:main"
+onero-h1-record-episode = "onero_h1_lerobot.cli.record_episode:main"
+onero-h1-safe-test-action = "onero_h1_lerobot.cli.safe_test_action:main"
+onero-h1-lerobot-record = "onero_h1_lerobot.cli.lerobot_record:main"
+onero-h1-lerobot-teleoperate = "onero_h1_lerobot.cli.lerobot_teleoperate:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/onero_h1_lerobot", "src/lerobot_robot_onero_h1"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+ignore = ["E501"]
