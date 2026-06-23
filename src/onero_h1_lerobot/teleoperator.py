@@ -130,12 +130,18 @@ class OneroH1RosJointTeleop(Teleoperator):
         self.executor = self.ros.MultiThreadedExecutor(num_threads=self.config.executor_threads)
         self.executor.add_node(self.node)
         self._create_subscribers()
-        self._spin_thread = threading.Thread(
-            target=self.executor.spin, name="onero_h1_teleop_ros_spin", daemon=True
-        )
+        self._spin_thread = threading.Thread(target=self._spin, name="onero_h1_teleop_ros_spin", daemon=True)
         self._spin_thread.start()
         self._connected = True
         self._wait_for_first_action(self.config.connect_timeout_s)
+
+    def _spin(self) -> None:
+        assert self.executor is not None
+        try:
+            self.executor.spin()
+        except Exception:
+            if self._connected:
+                raise
 
     def _create_subscribers(self) -> None:
         assert self.ros is not None and self.node is not None
@@ -281,10 +287,14 @@ class OneroH1RosJointTeleop(Teleoperator):
     def disconnect(self) -> None:
         if not self._connected:
             return
+        if self.executor is not None and self.node is not None:
+            self.executor.remove_node(self.node)
+        self._connected = False
         if self.executor is not None:
-            self.executor.shutdown()
+            self.executor.shutdown(timeout_sec=2.0)
         if self._spin_thread is not None:
             self._spin_thread.join(timeout=2.0)
+        self._drain_executor_futures()
         if self.node is not None:
             self.node.destroy_node()
         if (
@@ -294,8 +304,27 @@ class OneroH1RosJointTeleop(Teleoperator):
             and self.ros.rclpy.ok()
         ):
             self.ros.rclpy.shutdown()
-        self._connected = False
         self.node = None
         self.executor = None
         self._spin_thread = None
         self._subscriptions.clear()
+
+    def _drain_executor_futures(self) -> None:
+        if self.executor is None:
+            return
+        worker = getattr(self.executor, "_executor", None)
+        if worker is not None:
+            worker.shutdown(wait=True)
+        futures = getattr(self.executor, "_futures", None)
+        if futures is None:
+            return
+        for future in list(futures):
+            if not future.done():
+                continue
+            try:
+                future.result()
+            except Exception:
+                pass
+            finally:
+                if future in futures:
+                    futures.remove(future)

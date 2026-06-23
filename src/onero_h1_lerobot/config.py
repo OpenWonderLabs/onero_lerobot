@@ -6,8 +6,8 @@ from dataclasses import dataclass, field
 
 from .compat import RobotConfig
 
-DEFAULT_LEFT_ARM_JOINTS = tuple(f"left_joint{i}" for i in range(1, 8))
-DEFAULT_RIGHT_ARM_JOINTS = tuple(f"right_joint{i}" for i in range(1, 8))
+DEFAULT_LEFT_ARM_JOINTS = tuple(f"joint{i}-l" for i in range(1, 8))
+DEFAULT_RIGHT_ARM_JOINTS = tuple(f"joint{i}-r" for i in range(1, 8))
 DEFAULT_CAMERA_TOPICS = {
     "head": "/head/camera/rgb",
     "head_depth_rgb": "/head2/camera/rgb",
@@ -61,12 +61,16 @@ class OneroH1Config(RobotConfig):
 
     # ROS topics from the current SDK documentation
     joint_states_topic: str = "/joint_states"
+    left_arm_state_topic: str = "/left_joint_states"
+    right_arm_state_topic: str = "/right_joint_states"
+    head_state_topic: str = "/head/joint_states"
     odom_topic: str = "/odom"
     front_bumper_topic: str = "/front_bumper"
     battery_topic: str = "/battery/state"
 
     left_arm_movej_topic: str = "/left_arm/movej"
     right_arm_movej_topic: str = "/right_arm/movej"
+    arm_movej_speed_scale: float | None = 1.0
     left_arm_joint_names: tuple[str, ...] = DEFAULT_LEFT_ARM_JOINTS
     right_arm_joint_names: tuple[str, ...] = DEFAULT_RIGHT_ARM_JOINTS
     require_complete_arm_action: bool = True

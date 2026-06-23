@@ -19,13 +19,14 @@ robot.disconnect()
 Implemented against the current SDK documentation:
 
 - Observations
-  - `/joint_states` for arm/head joint positions when available
+  - `/joint_states` for aggregated joint positions when available
+  - `/left_joint_states`, `/right_joint_states`, and `/head/joint_states` for arm/head joint positions
   - `/lift/joint_states` for lift height
   - `/odom` for base pose and velocity
   - `/battery/state` and `/front_bumper`
   - `/head/camera/rgb`, `/left/camera/rgb`, `/right/camera/rgb` compressed RGB streams
 - Actions
-  - `/left_arm/movej` and `/right_arm/movej` (`sensor_msgs/msg/JointState`)
+  - `/left_arm/movej` and `/right_arm/movej` (`std_msgs/msg/String` JSON with `joints` and optional `speed_scale`)
   - `/lift/joint_states/update` (`sensor_msgs/msg/JointState`)
   - `/head/joint_states/update` (`sensor_msgs/msg/JointState`)
   - Optional `/cmd_vel` base velocity action, disabled by default
@@ -45,6 +46,12 @@ python3 -m pip install -e '.[lerobot]'
 ```
 
 `rclpy` and ROS message packages are provided by ROS2, not by PyPI. Make sure your H1 ROS workspace is sourced before running the adapter.
+
+Camera decoding needs `cv2`, but the base install does not force a PyPI OpenCV download. Check the current environment first:
+
+```bash
+python3 -c "import cv2; print(cv2.__version__)" || python3 -m pip install -e '.[camera]'
+```
 
 ## Quick checks
 
@@ -143,8 +150,8 @@ The `onero_h1_ros_joint` teleoperator reads ROS2 `JointState` topics and outputs
 Default action feature order:
 
 ```text
-left_arm.left_joint1.pos ... left_arm.left_joint7.pos
-right_arm.right_joint1.pos ... right_arm.right_joint7.pos
+left_arm.joint1-l.pos ... left_arm.joint7-l.pos
+right_arm.joint1-r.pos ... right_arm.joint7-r.pos
 lift.pos
 head.pitch.pos
 head.yaw.pos

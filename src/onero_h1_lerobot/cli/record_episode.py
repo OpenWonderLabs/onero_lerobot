@@ -46,7 +46,12 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    LeRobotDataset, build_dataset_frame, hw_to_dataset_features = _import_lerobot_dataset_tools()
+    try:
+        LeRobotDataset, build_dataset_frame, hw_to_dataset_features = _import_lerobot_dataset_tools()
+    except RuntimeError as exc:
+        raise SystemExit(
+            f"ERROR: {exc}\nInstall LeRobot support with: python3 -m pip install -e '.[lerobot]'"
+        ) from None
 
     camera_names = tuple(name.strip() for name in args.cameras.split(",") if name.strip())
     config = OneroH1Config(id=args.id, use_cameras=not args.no_cameras, camera_names=camera_names)

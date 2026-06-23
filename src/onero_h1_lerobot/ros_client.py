@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import threading
 import time
 from types import SimpleNamespace
@@ -27,7 +28,7 @@ def _import_ros() -> SimpleNamespace:
         from nav_msgs.msg import Odometry
         from rclpy.executors import MultiThreadedExecutor
         from sensor_msgs.msg import BatteryState, CompressedImage, JointState
-        from std_msgs.msg import Bool
+        from std_msgs.msg import Bool, String
     except Exception as exc:  # pragma: no cover - depends on ROS2 installation
         raise RosImportError(
             "ROS2 Python packages are not available. Source your ROS2 Jazzy environment "
@@ -44,6 +45,7 @@ def _import_ros() -> SimpleNamespace:
         DiagnosticStatus=DiagnosticStatus,
         Twist=Twist,
         Bool=Bool,
+        String=String,
     )
 
 
@@ -98,19 +100,27 @@ class H1RosClient:
         self._create_publishers()
         self._create_subscribers()
 
-        self._spin_thread = threading.Thread(target=self.executor.spin, name="onero_h1_ros_spin", daemon=True)
+        self._spin_thread = threading.Thread(target=self._spin, name="onero_h1_ros_spin", daemon=True)
         self._spin_thread.start()
         self._connected = True
+
+    def _spin(self) -> None:
+        assert self.executor is not None
+        try:
+            self.executor.spin()
+        except Exception:
+            if self._connected:
+                raise
 
     def _create_publishers(self) -> None:
         assert self.ros is not None and self.node is not None
         if self.config.use_left_arm:
             self._pub_left_arm = self.node.create_publisher(
-                self.ros.JointState, self.config.left_arm_movej_topic, 10
+                self.ros.String, self.config.left_arm_movej_topic, 10
             )
         if self.config.use_right_arm:
             self._pub_right_arm = self.node.create_publisher(
-                self.ros.JointState, self.config.right_arm_movej_topic, 10
+                self.ros.String, self.config.right_arm_movej_topic, 10
             )
         if self.config.use_lift:
             self._pub_lift = self.node.create_publisher(
@@ -127,11 +137,24 @@ class H1RosClient:
 
     def _create_subscribers(self) -> None:
         assert self.ros is not None and self.node is not None
-        self._subscriptions.append(
-            self.node.create_subscription(
-                self.ros.JointState, self.config.joint_states_topic, self._on_joint_state, 20
+        joint_state_topics: dict[str, list[str]] = {}
+        if self.config.joint_states_topic:
+            joint_state_topics.setdefault(self.config.joint_states_topic, []).append("joint_states")
+        if self.config.use_left_arm and self.config.left_arm_state_topic:
+            joint_state_topics.setdefault(self.config.left_arm_state_topic, []).append("left_arm")
+        if self.config.use_right_arm and self.config.right_arm_state_topic:
+            joint_state_topics.setdefault(self.config.right_arm_state_topic, []).append("right_arm")
+        if self.config.use_head and self.config.head_state_topic:
+            joint_state_topics.setdefault(self.config.head_state_topic, []).append("head")
+        for topic, source_keys in joint_state_topics.items():
+            self._subscriptions.append(
+                self.node.create_subscription(
+                    self.ros.JointState,
+                    topic,
+                    lambda msg, keys=tuple(source_keys): self._on_joint_state(msg, keys),
+                    20,
+                )
             )
-        )
 
         if self.config.use_lift:
             self._subscriptions.append(
@@ -171,7 +194,7 @@ class H1RosClient:
     def _stamp(self, key: str) -> None:
         self._stamps[key] = now_monotonic()
 
-    def _on_joint_state(self, msg: Any) -> None:
+    def _on_joint_state(self, msg: Any, source_keys: tuple[str, ...] = ("joint_states",)) -> None:
         with self._lock:
             for i, name in enumerate(msg.name):
                 if i < len(msg.position):
@@ -180,6 +203,8 @@ class H1RosClient:
                     self._joint_vel[name] = float(msg.velocity[i])
                 if i < len(msg.effort):
                     self._joint_effort[name] = float(msg.effort[i])
+            for key in source_keys:
+                self._stamp(key)
             self._stamp("joint_states")
 
     def _on_lift_state(self, msg: Any) -> None:
@@ -265,12 +290,31 @@ class H1RosClient:
                 "time": now_monotonic(),
             }
 
+    def _required_warmup_keys(self) -> tuple[str, ...]:
+        keys: list[str] = []
+        if self.config.use_left_arm:
+            keys.append("left_arm" if self.config.left_arm_state_topic else "joint_states")
+        if self.config.use_right_arm:
+            keys.append("right_arm" if self.config.right_arm_state_topic else "joint_states")
+        if self.config.use_head:
+            keys.append("head" if self.config.head_state_topic else "joint_states")
+        if self.config.use_lift:
+            keys.append("lift")
+        if self.config.use_base_observation:
+            keys.append("odom")
+        if self.config.use_bumper_observation:
+            keys.append("front_bumper")
+        return tuple(dict.fromkeys(keys))
+
     def wait_for_first_observation(self, timeout_s: float | None = None) -> bool:
         timeout_s = self.config.connect_timeout_s if timeout_s is None else timeout_s
         deadline = time.monotonic() + timeout_s
+        required_keys = self._required_warmup_keys()
         while time.monotonic() < deadline:
             snap = self.snapshot()
-            if snap["joint_pos"] or snap["base"] or snap["images"]:
+            if required_keys and all(key in snap["stamps"] for key in required_keys):
+                return True
+            if not required_keys and (snap["joint_pos"] or snap["base"] or snap["images"]):
                 return True
             time.sleep(0.05)
         return False
@@ -283,11 +327,16 @@ class H1RosClient:
         msg.position = [float(v) for v in positions]
         return msg
 
-    def publish_arm_movej(self, side: str, joint_names: list[str], positions: list[float]) -> None:
+    def publish_arm_movej(self, side: str, positions: list[float]) -> None:
         publisher = self._pub_left_arm if side == "left" else self._pub_right_arm
-        if publisher is None:
+        if publisher is None or self.ros is None:
             return
-        publisher.publish(self._new_joint_state_msg(joint_names, positions))
+        payload: dict[str, Any] = {"joints": [float(v) for v in positions]}
+        if self.config.arm_movej_speed_scale is not None:
+            payload["speed_scale"] = float(self.config.arm_movej_speed_scale)
+        msg = self.ros.String()
+        msg.data = json.dumps(payload, separators=(",", ":"))
+        publisher.publish(msg)
 
     def publish_lift(self, height_m: float) -> None:
         if self._pub_lift is None:
@@ -327,10 +376,15 @@ class H1RosClient:
         if self.config.stop_base_on_disconnect:
             self.publish_base_velocity(0.0, 0.0, 0.0)
 
+        if self.executor is not None and self.node is not None:
+            self.executor.remove_node(self.node)
+
+        self._connected = False
         if self.executor is not None:
-            self.executor.shutdown()
+            self.executor.shutdown(timeout_sec=2.0)
         if self._spin_thread is not None:
             self._spin_thread.join(timeout=2.0)
+        self._drain_executor_futures()
 
         if self.node is not None:
             self.node.destroy_node()
@@ -343,8 +397,27 @@ class H1RosClient:
         ):
             self.ros.rclpy.shutdown()
 
-        self._connected = False
         self.node = None
         self.executor = None
         self._spin_thread = None
         self._subscriptions.clear()
+
+    def _drain_executor_futures(self) -> None:
+        if self.executor is None:
+            return
+        worker = getattr(self.executor, "_executor", None)
+        if worker is not None:
+            worker.shutdown(wait=True)
+        futures = getattr(self.executor, "_futures", None)
+        if futures is None:
+            return
+        for future in list(futures):
+            if not future.done():
+                continue
+            try:
+                future.result()
+            except Exception:
+                pass
+            finally:
+                if future in futures:
+                    futures.remove(future)

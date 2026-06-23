@@ -217,14 +217,14 @@ class OneroH1Robot(Robot):
                 clipped, observation, "left", self.config.left_arm_joint_names
             )
             if left_positions is not None:
-                client.publish_arm_movej("left", list(self.config.left_arm_joint_names), left_positions)
+                client.publish_arm_movej("left", left_positions)
 
         if self.config.use_right_arm:
             right_positions = self._arm_positions_from_action(
                 clipped, observation, "right", self.config.right_arm_joint_names
             )
             if right_positions is not None:
-                client.publish_arm_movej("right", list(self.config.right_arm_joint_names), right_positions)
+                client.publish_arm_movej("right", right_positions)
 
         if self.config.use_lift and "lift.pos" in clipped:
             client.publish_lift(clipped["lift.pos"])
