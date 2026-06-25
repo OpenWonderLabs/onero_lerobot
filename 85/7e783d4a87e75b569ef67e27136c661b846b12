@@ -1,0 +1,19 @@
+README_zh.md
+  s_2eddf2daf54d72::t_358a2c8b60d775 1-191
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.13",
+  "base_commit_sha": "857e783d4a87e75b569ef67e27136c661b846b12",
+  "prompts": {},
+  "sessions": {
+    "s_2eddf2daf54d72": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "86511489-b9da-4a8f-8805-9084354eb9f6",
+        "model": "claude-opus-4-7"
+      },
+      "human_author": "Albert Lv <lvwenyi@onerobot.com>"
+    }
+  }
+}
