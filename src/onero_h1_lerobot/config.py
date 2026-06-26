@@ -8,6 +8,24 @@ from .compat import RobotConfig
 
 DEFAULT_LEFT_ARM_JOINTS = tuple(f"joint{i}-l" for i in range(1, 8))
 DEFAULT_RIGHT_ARM_JOINTS = tuple(f"joint{i}-r" for i in range(1, 8))
+DEFAULT_LEFT_ARM_LIMITS = (
+    (-3.14, 1.05),
+    (-0.44, 3.58),
+    (-2.76, 2.76),
+    (-1.946, 1.946),
+    (-2.234, 2.234),
+    (-2.094, 2.094),
+    (-2.87, 2.87),
+)
+DEFAULT_RIGHT_ARM_LIMITS = (
+    (-1.05, 3.14),
+    (-3.58, 0.44),
+    (-2.76, 2.76),
+    (-1.946, 1.946),
+    (-2.234, 2.234),
+    (-2.094, 2.094),
+    (-2.87, 2.87),
+)
 DEFAULT_CAMERA_TOPICS = {
     "head": "/head/camera/rgb",
     "head_depth_rgb": "/head2/camera/rgb",
@@ -42,6 +60,7 @@ class OneroH1Config(RobotConfig):
     # Robot modules included in observations/actions
     use_left_arm: bool = True
     use_right_arm: bool = True
+    use_arm_velocity_action: bool = True
     use_lift: bool = True
     use_head: bool = True
     use_base_observation: bool = True
@@ -68,11 +87,23 @@ class OneroH1Config(RobotConfig):
     front_bumper_topic: str = "/front_bumper"
     battery_topic: str = "/battery/state"
 
+    arm_command_mode: str = "record_data"
+    record_data_topic: str = "/record_data"
+    record_data_max_velocity_radps: float = 6.0
+    record_data_velocity_alpha: float = 0.25
+    record_data_apply_delta_limit: bool = False
+    record_data_use_fixed_joint7_velocity: bool = True
+    record_data_left_joint7_velocity: float = 0.0001
+    record_data_right_joint7_velocity: float = 0.01
     left_arm_movej_topic: str = "/left_arm/movej"
     right_arm_movej_topic: str = "/right_arm/movej"
     arm_movej_speed_scale: float | None = 1.0
+    arm_movej_publish_hz: float = 5.0
+    arm_movej_min_delta_rad: float = 0.03
     left_arm_joint_names: tuple[str, ...] = DEFAULT_LEFT_ARM_JOINTS
     right_arm_joint_names: tuple[str, ...] = DEFAULT_RIGHT_ARM_JOINTS
+    left_arm_position_limits: tuple[tuple[float, float], ...] = DEFAULT_LEFT_ARM_LIMITS
+    right_arm_position_limits: tuple[tuple[float, float], ...] = DEFAULT_RIGHT_ARM_LIMITS
     require_complete_arm_action: bool = True
 
     lift_state_topic: str = "/lift/joint_states"

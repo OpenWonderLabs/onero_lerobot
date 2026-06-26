@@ -33,14 +33,15 @@ class OneroH1RosJointTeleopConfig(TeleoperatorConfig):
 
     use_left_arm: bool = True
     use_right_arm: bool = True
+    use_arm_velocity_action: bool = True
     use_lift: bool = True
     use_head: bool = True
     use_base_velocity_action: bool = False
 
-    left_arm_topic: str = "/teleop/left_arm/joint_states"
-    right_arm_topic: str = "/teleop/right_arm/joint_states"
-    lift_topic: str = "/teleop/lift/joint_states"
-    head_topic: str = "/teleop/head/joint_states"
+    left_arm_topic: str = "/left/joint_states"
+    right_arm_topic: str = "/right/joint_states"
+    lift_topic: str = "/lift/joint_states"
+    head_topic: str = "/head/joint_states"
     base_velocity_topic: str = "/teleop/cmd_vel"
 
     left_arm_joint_names: tuple[str, ...] = DEFAULT_LEFT_ARM_JOINTS
@@ -50,6 +51,13 @@ class OneroH1RosJointTeleopConfig(TeleoperatorConfig):
     head_yaw_joint_name: str = "head_yaw_joint"
 
     stale_action_s: float = 1.0
+    max_estimated_arm_velocity_radps: float = 6.0
+    smooth_arm_actions: bool = True
+    arm_position_alpha: float = 0.35
+    arm_velocity_alpha: float = 0.25
+    arm_position_deadband_rad: float = 0.0
+    arm_velocity_deadband_radps: float = 0.02
+    arm_filter_reset_after_s: float = 0.25
     require_fresh_action: bool = True
     allow_missing_keys: bool = False
 
@@ -78,6 +86,10 @@ class OneroH1RosJointTeleop(Teleoperator):
         self._lock = threading.RLock()
         self._action: dict[str, float] = {}
         self._stamps: dict[str, float] = {}
+        self._last_arm_positions: dict[str, dict[str, float]] = {}
+        self._filtered_arm_positions: dict[str, dict[str, float]] = {}
+        self._last_arm_position_time: dict[str, float] = {}
+        self._last_arm_velocities: dict[str, dict[str, float]] = {}
         self._subscriptions: list[Any] = []
 
     @property
@@ -93,8 +105,12 @@ class OneroH1RosJointTeleop(Teleoperator):
         names: list[str] = []
         if self.config.use_left_arm:
             names.extend(f"left_arm.{joint}.pos" for joint in self.config.left_arm_joint_names)
+            if self.config.use_arm_velocity_action:
+                names.extend(f"left_arm.{joint}.vel" for joint in self.config.left_arm_joint_names)
         if self.config.use_right_arm:
             names.extend(f"right_arm.{joint}.pos" for joint in self.config.right_arm_joint_names)
+            if self.config.use_arm_velocity_action:
+                names.extend(f"right_arm.{joint}.vel" for joint in self.config.right_arm_joint_names)
         if self.config.use_lift:
             names.append("lift.pos")
         if self.config.use_head:
@@ -194,13 +210,150 @@ class OneroH1RosJointTeleop(Teleoperator):
             return {name: float(msg.position[i]) for i, name in enumerate(joint_names)}
         return {}
 
+    @staticmethod
+    def _velocities_by_joint(msg: Any, joint_names: tuple[str, ...]) -> dict[str, float]:
+        by_name = {
+            name: float(msg.velocity[i])
+            for i, name in enumerate(msg.name)
+            if i < len(msg.velocity) and name
+        }
+        if all(name in by_name for name in joint_names):
+            return {name: by_name[name] for name in joint_names}
+        if len(msg.velocity) >= len(joint_names):
+            return {name: float(msg.velocity[i]) for i, name in enumerate(joint_names)}
+        return {}
+
+    def _estimated_velocities(
+        self,
+        side: str,
+        positions: dict[str, float],
+        now: float,
+    ) -> dict[str, float]:
+        last_positions = self._last_arm_positions.get(side)
+        last_time = self._last_arm_position_time.get(side)
+        last_velocities = self._last_arm_velocities.get(side, {})
+
+        self._last_arm_positions[side] = dict(positions)
+        self._last_arm_position_time[side] = now
+
+        if last_positions is None or last_time is None:
+            velocities = {joint: 0.0 for joint in positions}
+            self._last_arm_velocities[side] = velocities
+            return velocities
+
+        dt = max(now - last_time, 1e-3)
+        max_vel = max(0.0, float(self.config.max_estimated_arm_velocity_radps))
+        alpha = min(max(float(self.config.arm_velocity_alpha), 0.0), 1.0)
+        velocities: dict[str, float] = {}
+        for joint, position in positions.items():
+            if joint not in last_positions:
+                velocity = 0.0
+            else:
+                velocity = (float(position) - float(last_positions[joint])) / dt
+            if max_vel > 0.0:
+                velocity = min(max(velocity, -max_vel), max_vel)
+            if joint in last_velocities:
+                velocity = alpha * velocity + (1.0 - alpha) * float(last_velocities[joint])
+            velocities[joint] = velocity
+
+        self._last_arm_velocities[side] = velocities
+        return velocities
+
+    def _filter_arm_action(
+        self,
+        side: str,
+        positions: dict[str, float],
+        velocities: dict[str, float],
+        now: float,
+    ) -> tuple[dict[str, float], dict[str, float]]:
+        if not self.config.smooth_arm_actions:
+            if self.config.use_arm_velocity_action and not velocities:
+                velocities = self._estimated_velocities(side, positions, now)
+            else:
+                self._last_arm_positions[side] = dict(positions)
+                self._filtered_arm_positions[side] = dict(positions)
+                self._last_arm_position_time[side] = now
+                if velocities:
+                    self._last_arm_velocities[side] = dict(velocities)
+            return positions, velocities
+
+        last_positions = self._last_arm_positions.get(side)
+        last_filtered_positions = self._filtered_arm_positions.get(side)
+        last_time = self._last_arm_position_time.get(side)
+        last_velocities = self._last_arm_velocities.get(side, {})
+
+        self._last_arm_positions[side] = dict(positions)
+        self._last_arm_position_time[side] = now
+
+        reset_after_s = max(0.0, float(self.config.arm_filter_reset_after_s))
+        if (
+            last_positions is None
+            or last_filtered_positions is None
+            or last_time is None
+            or now <= last_time
+            or (reset_after_s > 0.0 and now - last_time > reset_after_s)
+        ):
+            filtered_positions = dict(positions)
+            filtered_velocities = {
+                joint: float(velocities.get(joint, 0.0))
+                for joint in positions
+            }
+            self._filtered_arm_positions[side] = filtered_positions
+            self._last_arm_velocities[side] = filtered_velocities
+            return filtered_positions, filtered_velocities
+
+        dt = max(now - last_time, 1e-3)
+        position_alpha = min(max(float(self.config.arm_position_alpha), 0.0), 1.0)
+        velocity_alpha = min(max(float(self.config.arm_velocity_alpha), 0.0), 1.0)
+        position_deadband = max(0.0, float(self.config.arm_position_deadband_rad))
+        velocity_deadband = max(0.0, float(self.config.arm_velocity_deadband_radps))
+        max_vel = max(0.0, float(self.config.max_estimated_arm_velocity_radps))
+
+        filtered_positions: dict[str, float] = {}
+        filtered_velocities: dict[str, float] = {}
+        for joint, raw_position in positions.items():
+            previous_filtered_position = float(last_filtered_positions.get(joint, raw_position))
+            position_error = float(raw_position) - previous_filtered_position
+            if abs(position_error) <= position_deadband:
+                filtered_position = previous_filtered_position
+            else:
+                filtered_position = previous_filtered_position + position_alpha * position_error
+            filtered_positions[joint] = filtered_position
+
+            if joint in velocities:
+                raw_velocity = float(velocities[joint])
+            elif joint in last_positions:
+                raw_velocity = (float(raw_position) - float(last_positions[joint])) / dt
+            else:
+                raw_velocity = 0.0
+
+            if max_vel > 0.0:
+                raw_velocity = min(max(raw_velocity, -max_vel), max_vel)
+            if abs(raw_velocity) <= velocity_deadband:
+                raw_velocity = 0.0
+
+            previous_velocity = float(last_velocities.get(joint, raw_velocity))
+            filtered_velocities[joint] = (
+                velocity_alpha * raw_velocity + (1.0 - velocity_alpha) * previous_velocity
+            )
+
+        self._filtered_arm_positions[side] = filtered_positions
+        self._last_arm_velocities[side] = filtered_velocities
+        return filtered_positions, filtered_velocities
+
     def _on_arm(self, side: str, joint_names: tuple[str, ...], msg: Any) -> None:
         positions = self._positions_by_joint(msg, joint_names)
         if not positions:
             return
+        now = now_monotonic()
+        velocities = self._velocities_by_joint(msg, joint_names)
+        positions, velocities = self._filter_arm_action(side, positions, velocities, now)
         with self._lock:
             for joint, value in positions.items():
                 self._action[f"{side}_arm.{joint}.pos"] = value
+            if self.config.use_arm_velocity_action:
+                for joint, value in velocities.items():
+                    self._action[f"{side}_arm.{joint}.vel"] = value
             self._stamp(f"{side}_arm")
 
     def _on_lift(self, msg: Any) -> None:
@@ -252,16 +405,32 @@ class OneroH1RosJointTeleop(Teleoperator):
             time.sleep(0.05)
         return False
 
+    def _action_snapshot(self) -> tuple[dict[str, float], dict[str, float]]:
+        with self._lock:
+            return dict(self._action), dict(self._stamps)
+
     def get_action(self) -> RobotAction:
         if not self.is_connected:
             raise ConnectionError(f"{self} is not connected")
 
         now = now_monotonic()
-        with self._lock:
-            action = dict(self._action)
-            stamps = dict(self._stamps)
+        action, stamps = self._action_snapshot()
 
         missing = [key for key in self.action_feature_names if key not in action]
+        stale_sources: list[str] = []
+        if self.config.require_fresh_action:
+            stale_sources = [
+                key
+                for key in self._required_stamp_keys()
+                if key not in stamps or now - stamps[key] > self.config.stale_action_s
+            ]
+
+        if missing or stale_sources:
+            self._wait_for_first_action(self.config.connect_timeout_s)
+            now = now_monotonic()
+            action, stamps = self._action_snapshot()
+            missing = [key for key in self.action_feature_names if key not in action]
+
         if missing and not self.config.allow_missing_keys:
             raise RuntimeError(
                 "Teleop action is missing keys. Check that all configured ROS teleop topics are publishing: "

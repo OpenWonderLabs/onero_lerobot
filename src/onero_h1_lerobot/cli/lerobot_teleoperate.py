@@ -2,9 +2,17 @@
 
 from __future__ import annotations
 
+import sys
+
 # Importing the package registers OneroH1Config and OneroH1RosJointTeleopConfig
 # with LeRobot's draccus registries when LeRobot is installed.
 import onero_h1_lerobot  # noqa: F401
+
+
+def _ensure_default_fps(argv: list[str]) -> None:
+    if any(arg == "--fps" or arg.startswith("--fps=") for arg in argv[1:]):
+        return
+    argv.append("--fps=100")
 
 
 def main() -> None:
@@ -16,6 +24,7 @@ def main() -> None:
             "python3 -m pip install -e '.[lerobot]'"
         ) from None
 
+    _ensure_default_fps(sys.argv)
     lerobot_teleoperate_main()
 
 

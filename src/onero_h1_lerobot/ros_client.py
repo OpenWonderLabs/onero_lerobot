@@ -28,7 +28,7 @@ def _import_ros() -> SimpleNamespace:
         from nav_msgs.msg import Odometry
         from rclpy.executors import MultiThreadedExecutor
         from sensor_msgs.msg import BatteryState, CompressedImage, JointState
-        from std_msgs.msg import Bool, String
+        from std_msgs.msg import Bool, Float64MultiArray, String
     except Exception as exc:  # pragma: no cover - depends on ROS2 installation
         raise RosImportError(
             "ROS2 Python packages are not available. Source your ROS2 Jazzy environment "
@@ -45,6 +45,7 @@ def _import_ros() -> SimpleNamespace:
         DiagnosticStatus=DiagnosticStatus,
         Twist=Twist,
         Bool=Bool,
+        Float64MultiArray=Float64MultiArray,
         String=String,
     )
 
@@ -69,11 +70,18 @@ class H1RosClient:
         self._battery: dict[str, float] = {}
         self._bumper_pressed: bool | None = None
         self._arm_diagnostics: dict[str, Any] = {}
+        self._compressed_images: dict[str, bytes] = {}
+        self._compressed_image_stamps: dict[str, float] = {}
         self._images: dict[str, np.ndarray] = {}
+        self._image_decode_stamps: dict[str, float] = {}
+        self._image_condition = threading.Condition(self._lock)
+        self._image_decoder_threads: list[threading.Thread] = []
+        self._stop_image_decoders = False
         self._stamps: dict[str, float] = {}
 
         self._pub_left_arm = None
         self._pub_right_arm = None
+        self._pub_record_data = None
         self._pub_lift = None
         self._pub_head = None
         self._pub_base = None
@@ -99,6 +107,7 @@ class H1RosClient:
 
         self._create_publishers()
         self._create_subscribers()
+        self._start_image_decoders()
 
         self._spin_thread = threading.Thread(target=self._spin, name="onero_h1_ros_spin", daemon=True)
         self._spin_thread.start()
@@ -114,14 +123,26 @@ class H1RosClient:
 
     def _create_publishers(self) -> None:
         assert self.ros is not None and self.node is not None
-        if self.config.use_left_arm:
-            self._pub_left_arm = self.node.create_publisher(
-                self.ros.String, self.config.left_arm_movej_topic, 10
-            )
-        if self.config.use_right_arm:
-            self._pub_right_arm = self.node.create_publisher(
-                self.ros.String, self.config.right_arm_movej_topic, 10
-            )
+        arm_command_mode = self.config.arm_command_mode.lower()
+        if arm_command_mode == "record_data":
+            if self.config.use_left_arm and self.config.use_right_arm:
+                self._pub_record_data = self.node.create_publisher(
+                    self.ros.Float64MultiArray, self.config.record_data_topic, 1
+                )
+            elif self.config.use_left_arm or self.config.use_right_arm:
+                raise ValueError("record_data arm command mode requires both left and right arms")
+        elif arm_command_mode == "movej":
+            if self.config.use_left_arm:
+                self._pub_left_arm = self.node.create_publisher(
+                    self.ros.String, self.config.left_arm_movej_topic, 10
+                )
+            if self.config.use_right_arm:
+                self._pub_right_arm = self.node.create_publisher(
+                    self.ros.String, self.config.right_arm_movej_topic, 10
+                )
+        else:
+            raise ValueError(f"Unsupported arm_command_mode: {self.config.arm_command_mode}")
+
         if self.config.use_lift:
             self._pub_lift = self.node.create_publisher(
                 self.ros.JointState, self.config.lift_command_topic, 10
@@ -187,7 +208,7 @@ class H1RosClient:
                         self.ros.CompressedImage,
                         topic,
                         lambda msg, name=camera_name: self._on_compressed_image(name, msg),
-                        2,
+                        10,
                     )
                 )
 
@@ -253,15 +274,23 @@ class H1RosClient:
             self._stamp("front_bumper")
 
     def _on_compressed_image(self, camera_name: str, msg: Any) -> None:
+        stamp = now_monotonic()
+        with self._image_condition:
+            self._compressed_images[camera_name] = bytes(msg.data)
+            self._compressed_image_stamps[camera_name] = stamp
+            self._stamps[f"camera.{camera_name}"] = stamp
+            self._image_condition.notify_all()
+
+    def _decode_compressed_image(self, camera_name: str, data: bytes) -> np.ndarray | None:
         try:
             import cv2
         except Exception as exc:  # pragma: no cover - depends on optional OpenCV runtime
             raise RuntimeError("OpenCV is required for decoding ROS CompressedImage camera topics") from exc
 
-        data = np.frombuffer(msg.data, dtype=np.uint8)
-        image_bgr = cv2.imdecode(data, cv2.IMREAD_COLOR)
+        image_data = np.frombuffer(data, dtype=np.uint8)
+        image_bgr = cv2.imdecode(image_data, cv2.IMREAD_COLOR)
         if image_bgr is None:
-            return
+            return None
         image_rgb = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
 
         if self.config.resize_camera_images:
@@ -271,11 +300,64 @@ class H1RosClient:
                 if image_rgb.shape[:2] != (height, width):
                     image_rgb = cv2.resize(image_rgb, (width, height), interpolation=cv2.INTER_AREA)
 
+        return image_rgb
+
+    def _start_image_decoders(self) -> None:
+        if not self.config.use_cameras:
+            return
+        self._stop_image_decoders = False
+        self._image_decoder_threads = []
+        for camera_name in self.config.camera_names:
+            thread = threading.Thread(
+                target=self._image_decoder_loop,
+                args=(camera_name,),
+                name=f"onero_h1_decode_{camera_name}",
+                daemon=True,
+            )
+            thread.start()
+            self._image_decoder_threads.append(thread)
+
+    def _stop_image_decoder_threads(self) -> None:
+        with self._image_condition:
+            self._stop_image_decoders = True
+            self._image_condition.notify_all()
+        for thread in self._image_decoder_threads:
+            thread.join(timeout=2.0)
+        self._image_decoder_threads.clear()
+
+    def _image_decoder_loop(self, camera_name: str) -> None:
+        last_decoded_stamp: float | None = None
+        while True:
+            with self._image_condition:
+                self._image_condition.wait_for(
+                    lambda: self._stop_image_decoders
+                    or self._compressed_image_stamps.get(camera_name) != last_decoded_stamp,
+                    timeout=0.5,
+                )
+                if self._stop_image_decoders:
+                    return
+                stamp = self._compressed_image_stamps.get(camera_name)
+                data = self._compressed_images.get(camera_name)
+                if stamp is None or data is None or stamp == last_decoded_stamp:
+                    continue
+
+            image = self._decode_compressed_image(camera_name, data)
+
+            with self._image_condition:
+                last_decoded_stamp = stamp
+                if image is None:
+                    continue
+                if self._compressed_image_stamps.get(camera_name) != stamp:
+                    continue
+                self._images[camera_name] = image
+                self._image_decode_stamps[camera_name] = stamp
+
+    def _snapshot_images(self) -> dict[str, np.ndarray]:
         with self._lock:
-            self._images[camera_name] = image_rgb
-            self._stamp(f"camera.{camera_name}")
+            return {key: value.copy() for key, value in self._images.items()}
 
     def snapshot(self) -> dict[str, Any]:
+        images = self._snapshot_images()
         with self._lock:
             return {
                 "joint_pos": dict(self._joint_pos),
@@ -285,7 +367,7 @@ class H1RosClient:
                 "battery": dict(self._battery),
                 "front_bumper": self._bumper_pressed,
                 "arm_diagnostics": dict(self._arm_diagnostics),
-                "images": {key: value.copy() for key, value in self._images.items()},
+                "images": images,
                 "stamps": dict(self._stamps),
                 "time": now_monotonic(),
             }
@@ -338,6 +420,32 @@ class H1RosClient:
         msg.data = json.dumps(payload, separators=(",", ":"))
         publisher.publish(msg)
 
+    def publish_record_data(
+        self,
+        left_positions: list[float],
+        right_positions: list[float],
+        left_velocities: list[float] | None = None,
+        right_velocities: list[float] | None = None,
+    ) -> None:
+        if self._pub_record_data is None or self.ros is None:
+            return
+
+        left_velocities = [0.0] * len(left_positions) if left_velocities is None else left_velocities
+        right_velocities = [0.0] * len(right_positions) if right_velocities is None else right_velocities
+        if len(left_velocities) != len(left_positions):
+            raise ValueError("left_velocities length must match left_positions length")
+        if len(right_velocities) != len(right_positions):
+            raise ValueError("right_velocities length must match right_positions length")
+
+        msg = self.ros.Float64MultiArray()
+        msg.data = (
+            [float(v) for v in left_positions]
+            + [float(v) for v in left_velocities]
+            + [float(v) for v in right_positions]
+            + [float(v) for v in right_velocities]
+        )
+        self._pub_record_data.publish(msg)
+
     def publish_lift(self, height_m: float) -> None:
         if self._pub_lift is None:
             return
@@ -375,6 +483,8 @@ class H1RosClient:
 
         if self.config.stop_base_on_disconnect:
             self.publish_base_velocity(0.0, 0.0, 0.0)
+
+        self._stop_image_decoder_threads()
 
         if self.executor is not None and self.node is not None:
             self.executor.remove_node(self.node)

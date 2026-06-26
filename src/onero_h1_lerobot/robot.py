@@ -29,6 +29,11 @@ class OneroH1Robot(Robot):
         self.client: H1RosClient | None = None
         self._limiter = ActionLimiter(config)
         self.cameras = {name: None for name in config.camera_names} if config.use_cameras else {}
+        self._last_arm_movej_positions: dict[str, list[float]] = {}
+        self._last_arm_movej_time: dict[str, float] = {}
+        self._last_record_data_positions: dict[str, list[float]] = {}
+        self._last_record_data_time: dict[str, float] = {}
+        self._last_record_data_velocities: dict[str, list[float]] = {}
 
     @property
     def is_connected(self) -> bool:
@@ -51,8 +56,12 @@ class OneroH1Robot(Robot):
         names: list[str] = []
         if self.config.use_left_arm:
             names.extend(f"left_arm.{joint}.pos" for joint in self.config.left_arm_joint_names)
+            if self.config.use_arm_velocity_action:
+                names.extend(f"left_arm.{joint}.vel" for joint in self.config.left_arm_joint_names)
         if self.config.use_right_arm:
             names.extend(f"right_arm.{joint}.pos" for joint in self.config.right_arm_joint_names)
+            if self.config.use_arm_velocity_action:
+                names.extend(f"right_arm.{joint}.vel" for joint in self.config.right_arm_joint_names)
         if self.config.use_lift:
             names.append("lift.pos")
         if self.config.use_head:
@@ -205,26 +214,160 @@ class OneroH1Robot(Robot):
             return None
         return values
 
+    def _arm_velocities_from_action(
+        self,
+        action: dict[str, float],
+        side: str,
+        joint_names: tuple[str, ...],
+    ) -> list[float] | None:
+        if not self.config.use_arm_velocity_action:
+            return None
+
+        prefix = f"{side}_arm"
+        values: list[float] = []
+        for joint in joint_names:
+            key = f"{prefix}.{joint}.vel"
+            if key not in action:
+                return None
+            values.append(float(action[key]))
+        return values
+
+    def _should_publish_arm_movej(self, side: str, positions: list[float]) -> bool:
+        now = now_monotonic()
+        last_positions = self._last_arm_movej_positions.get(side)
+        last_time = self._last_arm_movej_time.get(side)
+
+        if last_positions is None or last_time is None:
+            self._last_arm_movej_positions[side] = list(positions)
+            self._last_arm_movej_time[side] = now
+            return True
+
+        min_delta = max(0.0, float(self.config.arm_movej_min_delta_rad))
+        max_delta = max(abs(float(new) - float(old)) for new, old in zip(positions, last_positions))
+        if max_delta < min_delta:
+            return False
+
+        publish_hz = float(self.config.arm_movej_publish_hz)
+        if publish_hz > 0.0 and now - last_time < 1.0 / publish_hz:
+            return False
+
+        self._last_arm_movej_positions[side] = list(positions)
+        self._last_arm_movej_time[side] = now
+        return True
+
+    def _estimated_arm_velocities(self, side: str, positions: list[float]) -> list[float]:
+        now = now_monotonic()
+        last_positions = self._last_record_data_positions.get(side)
+        last_time = self._last_record_data_time.get(side)
+        last_velocities = self._last_record_data_velocities.get(side)
+
+        self._last_record_data_positions[side] = list(positions)
+        self._last_record_data_time[side] = now
+
+        if last_positions is None or last_time is None or now - last_time > self.config.stale_observation_s:
+            velocities = [0.0] * len(positions)
+            self._last_record_data_velocities[side] = velocities
+            return velocities
+
+        dt = max(now - last_time, 1e-3)
+        max_vel = max(0.0, float(self.config.record_data_max_velocity_radps))
+        velocities = [(float(new) - float(old)) / dt for new, old in zip(positions, last_positions)]
+        if max_vel > 0.0:
+            velocities = [min(max(v, -max_vel), max_vel) for v in velocities]
+
+        alpha = min(max(float(self.config.record_data_velocity_alpha), 0.0), 1.0)
+        if last_velocities is not None and len(last_velocities) == len(velocities):
+            velocities = [
+                alpha * float(new) + (1.0 - alpha) * float(old)
+                for new, old in zip(velocities, last_velocities)
+            ]
+
+        self._last_record_data_velocities[side] = velocities
+        return velocities
+
+    def _send_arm_action(
+        self,
+        client: H1RosClient,
+        left_positions: list[float] | None,
+        right_positions: list[float] | None,
+        left_velocities: list[float] | None = None,
+        right_velocities: list[float] | None = None,
+    ) -> None:
+        arm_command_mode = self.config.arm_command_mode.lower()
+        if arm_command_mode == "record_data":
+            if left_positions is None or right_positions is None:
+                return
+            left_velocities = left_velocities or self._estimated_arm_velocities("left", left_positions)
+            right_velocities = right_velocities or self._estimated_arm_velocities("right", right_positions)
+            max_vel = max(0.0, float(self.config.record_data_max_velocity_radps))
+            if max_vel > 0.0:
+                left_velocities = [min(max(float(v), -max_vel), max_vel) for v in left_velocities]
+                right_velocities = [min(max(float(v), -max_vel), max_vel) for v in right_velocities]
+            if self.config.record_data_use_fixed_joint7_velocity:
+                if len(left_velocities) >= 7:
+                    left_velocities[6] = float(self.config.record_data_left_joint7_velocity)
+                if len(right_velocities) >= 7:
+                    right_velocities[6] = float(self.config.record_data_right_joint7_velocity)
+            client.publish_record_data(
+                left_positions,
+                right_positions,
+                left_velocities,
+                right_velocities,
+            )
+            return
+
+        if arm_command_mode != "movej":
+            raise ValueError(f"Unsupported arm_command_mode: {self.config.arm_command_mode}")
+
+        if left_positions is not None and self._should_publish_arm_movej("left", left_positions):
+            client.publish_arm_movej("left", left_positions)
+        if right_positions is not None and self._should_publish_arm_movej("right", right_positions):
+            client.publish_arm_movej("right", right_positions)
+
     def send_action(self, action: RobotAction) -> RobotAction:
         client = self._require_connected()
         normalized = normalize_action_dict(dict(action), self.action_feature_names)
         snap = client.snapshot()
         observation = self._scalar_observation_from_snapshot(snap)
-        clipped = self._limiter.clip_action(normalized, observation)
 
+        arm_command_mode = self.config.arm_command_mode.lower()
+        if arm_command_mode == "record_data" and not self.config.record_data_apply_delta_limit:
+            arm_action = {
+                key: value
+                for key, value in normalized.items()
+                if key.startswith("left_arm.") or key.startswith("right_arm.")
+            }
+            other_action = {key: value for key, value in normalized.items() if key not in arm_action}
+            clipped = {}
+            if arm_action:
+                clipped.update(self._limiter.clip_action(arm_action, observation, apply_delta=False))
+            if other_action:
+                clipped.update(self._limiter.clip_action(other_action, observation, apply_delta=True))
+        else:
+            clipped = self._limiter.clip_action(normalized, observation)
+
+        left_positions: list[float] | None = None
+        left_velocities: list[float] | None = None
         if self.config.use_left_arm:
             left_positions = self._arm_positions_from_action(
                 clipped, observation, "left", self.config.left_arm_joint_names
             )
-            if left_positions is not None:
-                client.publish_arm_movej("left", left_positions)
+            left_velocities = self._arm_velocities_from_action(
+                clipped, "left", self.config.left_arm_joint_names
+            )
 
+        right_positions: list[float] | None = None
+        right_velocities: list[float] | None = None
         if self.config.use_right_arm:
             right_positions = self._arm_positions_from_action(
                 clipped, observation, "right", self.config.right_arm_joint_names
             )
-            if right_positions is not None:
-                client.publish_arm_movej("right", right_positions)
+            right_velocities = self._arm_velocities_from_action(
+                clipped, "right", self.config.right_arm_joint_names
+            )
+
+        if self.config.use_left_arm or self.config.use_right_arm:
+            self._send_arm_action(client, left_positions, right_positions, left_velocities, right_velocities)
 
         if self.config.use_lift and "lift.pos" in clipped:
             client.publish_lift(clipped["lift.pos"])
