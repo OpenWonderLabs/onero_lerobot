@@ -26,7 +26,9 @@ def _import_ros() -> SimpleNamespace:
         from diagnostic_msgs.msg import DiagnosticStatus
         from geometry_msgs.msg import Twist
         from nav_msgs.msg import Odometry
+        from rclpy.callback_groups import ReentrantCallbackGroup
         from rclpy.executors import MultiThreadedExecutor
+        from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
         from sensor_msgs.msg import BatteryState, CompressedImage, JointState
         from std_msgs.msg import Bool, Float64MultiArray, String
     except Exception as exc:  # pragma: no cover - depends on ROS2 installation
@@ -37,7 +39,12 @@ def _import_ros() -> SimpleNamespace:
 
     return SimpleNamespace(
         rclpy=rclpy,
+        ReentrantCallbackGroup=ReentrantCallbackGroup,
         MultiThreadedExecutor=MultiThreadedExecutor,
+        DurabilityPolicy=DurabilityPolicy,
+        HistoryPolicy=HistoryPolicy,
+        QoSProfile=QoSProfile,
+        ReliabilityPolicy=ReliabilityPolicy,
         JointState=JointState,
         CompressedImage=CompressedImage,
         Odometry=Odometry,
@@ -74,6 +81,7 @@ class H1RosClient:
         self._compressed_image_stamps: dict[str, float] = {}
         self._images: dict[str, np.ndarray] = {}
         self._image_decode_stamps: dict[str, float] = {}
+        self._image_decode_counts: dict[str, int] = {}
         self._image_condition = threading.Condition(self._lock)
         self._image_decoder_threads: list[threading.Thread] = []
         self._stop_image_decoders = False
@@ -86,6 +94,7 @@ class H1RosClient:
         self._pub_head = None
         self._pub_base = None
         self._subscriptions: list[Any] = []
+        self._callback_groups: list[Any] = []
 
     @property
     def is_connected(self) -> bool:
@@ -199,6 +208,14 @@ class H1RosClient:
             )
 
         if self.config.use_cameras:
+            camera_callback_group = self.ros.ReentrantCallbackGroup()
+            self._callback_groups.append(camera_callback_group)
+            camera_qos = self.ros.QoSProfile(
+                history=self.ros.HistoryPolicy.KEEP_LAST,
+                depth=max(1, int(self.config.camera_subscription_depth)),
+                reliability=self.ros.ReliabilityPolicy.RELIABLE,
+                durability=self.ros.DurabilityPolicy.VOLATILE,
+            )
             for camera_name in self.config.camera_names:
                 topic = self.config.camera_topics.get(camera_name)
                 if not topic:
@@ -208,7 +225,8 @@ class H1RosClient:
                         self.ros.CompressedImage,
                         topic,
                         lambda msg, name=camera_name: self._on_compressed_image(name, msg),
-                        10,
+                        camera_qos,
+                        callback_group=camera_callback_group,
                     )
                 )
 
@@ -276,6 +294,9 @@ class H1RosClient:
     def _on_compressed_image(self, camera_name: str, msg: Any) -> None:
         stamp = now_monotonic()
         with self._image_condition:
+            # Latest-frame slot: ROS callbacks stay light and never build a
+            # backlog. If decoding falls behind, older compressed frames are
+            # overwritten and the decoder works on the newest frame available.
             self._compressed_images[camera_name] = bytes(msg.data)
             self._compressed_image_stamps[camera_name] = stamp
             self._stamps[f"camera.{camera_name}"] = stamp
@@ -286,6 +307,11 @@ class H1RosClient:
             import cv2
         except Exception as exc:  # pragma: no cover - depends on optional OpenCV runtime
             raise RuntimeError("OpenCV is required for decoding ROS CompressedImage camera topics") from exc
+
+        # Multi-camera recording is more stable when OpenCV does not spawn a
+        # large thread pool per decode path and starve DDS receive callbacks.
+        if cv2.getNumThreads() != 1:
+            cv2.setNumThreads(1)
 
         image_data = np.frombuffer(data, dtype=np.uint8)
         image_bgr = cv2.imdecode(image_data, cv2.IMREAD_COLOR)
@@ -305,13 +331,14 @@ class H1RosClient:
     def _start_image_decoders(self) -> None:
         if not self.config.use_cameras:
             return
+
         self._stop_image_decoders = False
         self._image_decoder_threads = []
         for camera_name in self.config.camera_names:
             thread = threading.Thread(
                 target=self._image_decoder_loop,
                 args=(camera_name,),
-                name=f"onero_h1_decode_{camera_name}",
+                name=f"onero_h1_image_decode_{camera_name}",
                 daemon=True,
             )
             thread.start()
@@ -327,15 +354,27 @@ class H1RosClient:
 
     def _image_decoder_loop(self, camera_name: str) -> None:
         last_decoded_stamp: float | None = None
+        decode_hz = float(self.config.camera_decode_hz)
+        period_s = 1.0 / decode_hz if decode_hz > 0.0 else 0.0
+        next_decode_at = 0.0
         while True:
             with self._image_condition:
-                self._image_condition.wait_for(
-                    lambda: self._stop_image_decoders
-                    or self._compressed_image_stamps.get(camera_name) != last_decoded_stamp,
-                    timeout=0.5,
-                )
+                while not self._stop_image_decoders:
+                    stamp = self._compressed_image_stamps.get(camera_name)
+                    data = self._compressed_images.get(camera_name)
+                    now = time.monotonic()
+                    if stamp is not None and data is not None and stamp != last_decoded_stamp:
+                        if period_s <= 0.0 or now >= next_decode_at:
+                            break
+                        timeout_s = max(0.0, next_decode_at - now)
+                    else:
+                        timeout_s = 0.5
+
+                    self._image_condition.wait(timeout=timeout_s)
+
                 if self._stop_image_decoders:
                     return
+
                 stamp = self._compressed_image_stamps.get(camera_name)
                 data = self._compressed_images.get(camera_name)
                 if stamp is None or data is None or stamp == last_decoded_stamp:
@@ -345,20 +384,45 @@ class H1RosClient:
 
             with self._image_condition:
                 last_decoded_stamp = stamp
+                if period_s > 0.0:
+                    next_decode_at = time.monotonic() + period_s
                 if image is None:
-                    continue
-                if self._compressed_image_stamps.get(camera_name) != stamp:
                     continue
                 self._images[camera_name] = image
                 self._image_decode_stamps[camera_name] = stamp
+                self._image_decode_counts[camera_name] = self._image_decode_counts.get(camera_name, 0) + 1
+                self._stamps[f"camera.{camera_name}.decoded"] = stamp
+                self._image_condition.notify_all()
 
     def _snapshot_images(self) -> dict[str, np.ndarray]:
-        with self._lock:
-            return {key: value.copy() for key, value in self._images.items()}
+        if self._image_decoder_threads:
+            with self._lock:
+                return dict(self._images)
 
-    def snapshot(self) -> dict[str, Any]:
-        images = self._snapshot_images()
+        pending: list[tuple[str, float, bytes]] = []
         with self._lock:
+            for camera_name in self.config.camera_names:
+                stamp = self._compressed_image_stamps.get(camera_name)
+                data = self._compressed_images.get(camera_name)
+                decoded_stamp = self._image_decode_stamps.get(camera_name)
+                if stamp is not None and data is not None and stamp != decoded_stamp:
+                    pending.append((camera_name, stamp, data))
+
+        for camera_name, stamp, data in pending:
+            image = self._decode_compressed_image(camera_name, data)
+            if image is None:
+                continue
+            with self._lock:
+                self._images[camera_name] = image
+                self._image_decode_stamps[camera_name] = stamp
+
+        with self._lock:
+            return dict(self._images)
+
+    def snapshot(self, include_images: bool = True) -> dict[str, Any]:
+        images = self._snapshot_images() if include_images else {}
+        with self._lock:
+            now = now_monotonic()
             return {
                 "joint_pos": dict(self._joint_pos),
                 "joint_vel": dict(self._joint_vel),
@@ -368,8 +432,9 @@ class H1RosClient:
                 "front_bumper": self._bumper_pressed,
                 "arm_diagnostics": dict(self._arm_diagnostics),
                 "images": images,
+                "image_decode_counts": dict(self._image_decode_counts),
                 "stamps": dict(self._stamps),
-                "time": now_monotonic(),
+                "time": now,
             }
 
     def _required_warmup_keys(self) -> tuple[str, ...]:
@@ -394,9 +459,18 @@ class H1RosClient:
         required_keys = self._required_warmup_keys()
         while time.monotonic() < deadline:
             snap = self.snapshot()
-            if required_keys and all(key in snap["stamps"] for key in required_keys):
+            warmup_frames = max(1, int(self.config.camera_warmup_frames))
+            cameras_ready = (
+                not self.config.use_cameras
+                or all(
+                    camera_name in snap["images"]
+                    and snap["image_decode_counts"].get(camera_name, 0) >= warmup_frames
+                    for camera_name in self.config.camera_names
+                )
+            )
+            if required_keys and cameras_ready and all(key in snap["stamps"] for key in required_keys):
                 return True
-            if not required_keys and (snap["joint_pos"] or snap["base"] or snap["images"]):
+            if not required_keys and cameras_ready and (snap["joint_pos"] or snap["base"] or snap["images"]):
                 return True
             time.sleep(0.05)
         return False

@@ -77,6 +77,11 @@ class OneroH1Config(RobotConfig):
     )
     resize_camera_images: bool = True
     fill_missing_images: bool = True
+    # Each camera keeps only the latest compressed ROS frame in the adapter.
+    # Decoding runs asynchronously at this maximum rate; set <= 0 for no explicit cap.
+    camera_decode_hz: float = 30.0
+    camera_subscription_depth: int = 10
+    camera_warmup_frames: int = 5
 
     # ROS topics from the current SDK documentation
     joint_states_topic: str = "/joint_states"

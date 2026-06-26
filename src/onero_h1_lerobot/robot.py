@@ -118,9 +118,16 @@ class OneroH1Robot(Robot):
             return
         self.client = H1RosClient(self.config)
         self.client.connect()
-        # Best effort warm-up. Some launch setups only publish when hardware is
-        # active, so lack of data here should not prevent connection.
-        self.client.wait_for_first_observation(self.config.connect_timeout_s)
+        # Scalar-only teleop can connect best-effort, but camera recording must
+        # not start until each camera has produced fresh decoded frames.
+        ready = self.client.wait_for_first_observation(self.config.connect_timeout_s)
+        if self.config.use_cameras and not ready:
+            self.client.disconnect()
+            self.client = None
+            raise TimeoutError(
+                "Timed out waiting for Onero H1 camera warm-up. "
+                "Each configured camera must decode multiple fresh frames before recording starts."
+            )
         if calibrate and not self.is_calibrated:
             self.calibrate()
 
@@ -327,7 +334,7 @@ class OneroH1Robot(Robot):
     def send_action(self, action: RobotAction) -> RobotAction:
         client = self._require_connected()
         normalized = normalize_action_dict(dict(action), self.action_feature_names)
-        snap = client.snapshot()
+        snap = client.snapshot(include_images=False)
         observation = self._scalar_observation_from_snapshot(snap)
 
         arm_command_mode = self.config.arm_command_mode.lower()
