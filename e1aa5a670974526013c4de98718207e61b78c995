@@ -1,0 +1,57 @@
+src/onero_h1_lerobot/teleoperator.py
+  s_ca36b17af387db::t_d87384be9ad2f7 36,54,57,89,91-92,108-109,112-113,213-261,348-349,354-356
+  s_ca36b17af387db::t_5b28baa21e44a7 41-42
+  s_ca36b17af387db::t_4f2fe39d058429 408-411,417,420-433
+  s_ca36b17af387db::t_249ed387bdb5c3 55-56,58-60,90,262-343,350
+  s_ca36b17af387db::t_221162397782cb 43-44
+src/onero_h1_lerobot/cli/lerobot_teleoperate.py
+  s_ca36b17af387db::t_ddcd6239407745 5-6,12-17,27
+src/onero_h1_lerobot/ros_client.py
+  s_ca36b17af387db::t_6d096c9a059929 306-307,336
+  s_ca36b17af387db::t_08fc7663adb317 126,134-145,435-438
+  s_ca36b17af387db::t_88f542eaa432af 31,48,84,423-434,439-447
+  s_ca36b17af387db::t_0526f8f9f252fa 74,76,277,291,293,303,343,360,370
+  s_ca36b17af387db::t_ec2b98960b65ba 110,305,319-320,487
+  s_ca36b17af387db::t_781b880663dd18 127-133
+  s_ca36b17af387db::t_6c3ad4982e82f7 73,77-79,278-279,281-282,284,290,308-318,321-335,337-342,344,346-355,357
+  s_ca36b17af387db::t_ef94c028971f90 211
+  s_ca36b17af387db::t_86a909f365d674 345
+  s_ca36b17af387db::t_db8cf399674d89 280,283
+  s_ca36b17af387db::t_2ff47a2d0e5fb9 304
+  s_ca36b17af387db::t_01a1495f083c80 448
+  s_ca36b17af387db::t_ad6e3faff826e2 488
+tests/test_safety.py
+  s_ca36b17af387db::t_2d262714f90939 4-5,10,101-125
+  s_ca36b17af387db::t_a20ce8317e2ad2 59-62,65-86
+  s_ca36b17af387db::t_d25c88b4f7ab19 63-64
+  s_ca36b17af387db::t_220d90ba6e5795 6,88-100
+  s_ca36b17af387db::t_692e10fdac22fc 87
+src/onero_h1_lerobot/safety.py
+  s_ca36b17af387db::t_bbc465caf2d6ae 19,21,39-58,68-70,72-76,94,114
+src/onero_h1_lerobot/robot.py
+  s_ca36b17af387db::t_78b9d8654dea27 36,262,267-270,277-285,296-297,319
+  s_ca36b17af387db::t_8885149c7d80bf 32-33,235-257
+  s_ca36b17af387db::t_c8e80121ceb719 59-60,63-64,217-234,293-294,300-310,314-315,333-348,350,355-357,360,365-367,370
+  s_ca36b17af387db::t_7c3bff366e1039 34-35,258-261,263-266,271-276,286-292,295,298-299,311-313,316-318,320-326,349,359,368-369
+src/onero_h1_lerobot/config.py
+  s_ca36b17af387db::t_36034b71446855 101-102
+  s_ca36b17af387db::t_f05d76bc4f474d 90-92
+  s_ca36b17af387db::t_eac024f60bd584 11-28,63,94-97,105-106
+  s_ca36b17af387db::t_8535e6defd9936 93
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.2",
+  "base_commit_sha": "e1aa5a670974526013c4de98718207e61b78c995",
+  "prompts": {},
+  "sessions": {
+    "s_ca36b17af387db": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019ef260-a5bf-7850-be9e-bebe9e31ffbd",
+        "model": "gpt-5.5"
+      },
+      "human_author": "DengLanJin <denglanjin@onerobot.com>"
+    }
+  }
+}

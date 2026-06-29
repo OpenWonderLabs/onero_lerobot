@@ -1,0 +1,37 @@
+src/onero_h1_lerobot/robot.py
+  s_ca36b17af387db::t_d9c291c3a8c5ed 123-130
+  s_ca36b17af387db::t_68e8ce1e21dc42 337
+  s_ca36b17af387db::t_f9a780351de9aa 121-122
+src/onero_h1_lerobot/ros_client.py
+  s_ca36b17af387db::t_6740d35e6004ae 31,44-47,213-215,217-218,228
+  s_ca36b17af387db::t_f4057632c2cf74 297-299,357-358,367,387-388,394-395,400,420,463-464,470-471,473
+  s_ca36b17af387db::t_070ccb909c2c44 341,359,362-366,368-374,377,398-399,401
+  s_ca36b17af387db::t_9dcb41baf5ba53 29,42,97,211-212,229
+  s_ca36b17af387db::t_a57a351b23028e 402,404-417,422-423
+  s_ca36b17af387db::t_30a0b530fc9fb0 425,437
+  s_ca36b17af387db::t_5bc316c9764d44 311-315
+  s_ca36b17af387db::t_26d482f0050f5f 216
+  s_ca36b17af387db::t_b778049e1e540f 84,393,435,462,465-469
+  s_ca36b17af387db::t_449e2493c8a648 421
+  s_ca36b17af387db::t_5c5b60315140c7 424
+src/onero_h1_lerobot/config.py
+  s_ca36b17af387db::t_2ab8ef5ef2ba89 84
+  s_ca36b17af387db::t_b7c47e0c66e923 82
+  s_ca36b17af387db::t_06428b884a7ac1 80-81,83
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.2",
+  "base_commit_sha": "1d4f11ef9b8e5c16fb6d125c068c9cd34c3ae004",
+  "prompts": {},
+  "sessions": {
+    "s_ca36b17af387db": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019ef260-a5bf-7850-be9e-bebe9e31ffbd",
+        "model": "gpt-5.5"
+      },
+      "human_author": "DengLanJin <denglanjin@onerobot.com>"
+    }
+  }
+}
