@@ -210,10 +210,12 @@ class H1RosClient:
         if self.config.use_cameras:
             camera_callback_group = self.ros.ReentrantCallbackGroup()
             self._callback_groups.append(camera_callback_group)
+            # 与图像发布端的 QoS 保持一致：X1/H1 相机发布端用 SensorDataQoS(BEST_EFFORT)，
+            # RELIABLE 订阅端 QoS 不兼容，会静默收不到任何帧。
             camera_qos = self.ros.QoSProfile(
                 history=self.ros.HistoryPolicy.KEEP_LAST,
                 depth=max(1, int(self.config.camera_subscription_depth)),
-                reliability=self.ros.ReliabilityPolicy.RELIABLE,
+                reliability=self.ros.ReliabilityPolicy.BEST_EFFORT,
                 durability=self.ros.DurabilityPolicy.VOLATILE,
             )
             for camera_name in self.config.camera_names:

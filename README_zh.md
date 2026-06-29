@@ -24,9 +24,11 @@ robot.disconnect()
   - `/lift/joint_states`：升降高度
   - `/odom`：底盘位姿与速度
   - `/battery/state` 和 `/front_bumper`
-  - `/head/camera/rgb`、`/left/camera/rgb`、`/right/camera/rgb` 压缩 RGB 图像流
+  - `/head/camera/rgb`、`/left/camera/rgb`、`/right/camera/rgb` 压缩 RGB 图像流（`sensor_msgs/msg/CompressedImage`，订阅端使用 BEST_EFFORT QoS，以匹配发布端的 `SensorDataQoS`）
 - 动作（Actions）
-  - `/left_arm/movej` 和 `/right_arm/movej`（`std_msgs/msg/String` JSON 格式，包含 `joints` 和可选的 `speed_scale`）
+  - 双臂关节指令，可通过 `arm_command_mode` 选择：
+    - `record_data`（默认）：单条 `/record_data`（`std_msgs/msg/Float64MultiArray`），数据布局为 `[左臂位置, 左臂速度, 右臂位置, 右臂速度]`
+    - `movej`：`/left_arm/movej` 和 `/right_arm/movej`（`std_msgs/msg/String` JSON 格式，包含 `joints` 和可选的 `speed_scale`）
   - `/lift/joint_states/update`（`sensor_msgs/msg/JointState`）
   - `/head/joint_states/update`（`sensor_msgs/msg/JointState`）
   - 可选的 `/cmd_vel` 底盘速度动作，默认关闭

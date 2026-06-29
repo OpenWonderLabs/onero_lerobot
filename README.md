@@ -24,9 +24,11 @@ Implemented against the current SDK documentation:
   - `/lift/joint_states` for lift height
   - `/odom` for base pose and velocity
   - `/battery/state` and `/front_bumper`
-  - `/head/camera/rgb`, `/left/camera/rgb`, `/right/camera/rgb` compressed RGB streams
+  - `/head/camera/rgb`, `/left/camera/rgb`, `/right/camera/rgb` compressed RGB streams (`sensor_msgs/msg/CompressedImage`, subscribed with BEST_EFFORT QoS to match the publishers' `SensorDataQoS`)
 - Actions
-  - `/left_arm/movej` and `/right_arm/movej` (`std_msgs/msg/String` JSON with `joints` and optional `speed_scale`)
+  - Dual-arm joint command, selectable via `arm_command_mode`:
+    - `record_data` (default): a single `/record_data` (`std_msgs/msg/Float64MultiArray`) carrying `[left positions, left velocities, right positions, right velocities]`
+    - `movej`: `/left_arm/movej` and `/right_arm/movej` (`std_msgs/msg/String` JSON with `joints` and optional `speed_scale`)
   - `/lift/joint_states/update` (`sensor_msgs/msg/JointState`)
   - `/head/joint_states/update` (`sensor_msgs/msg/JointState`)
   - Optional `/cmd_vel` base velocity action, disabled by default
