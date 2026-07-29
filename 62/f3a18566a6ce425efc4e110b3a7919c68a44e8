@@ -1,0 +1,57 @@
+NOTES.md
+  s_27fceafa0c0b1a::t_7c95013810f5f0 1-9
+README.md
+  s_27fceafa0c0b1a::t_d06473c2dc8bd4 1-193
+README_zh.md
+  s_27fceafa0c0b1a::t_dd2ee91daa3a34 1-193
+pyproject.toml
+  s_27fceafa0c0b1a::t_ac224ba99f1e88 1-55
+src/lerobot_robot_onero_h1/__init__.py
+  s_27fceafa0c0b1a::t_09f5c55a36d313 1-7
+src/onero_h1_lerobot/__init__.py
+  s_27fceafa0c0b1a::t_efc522017d561d 1-20
+src/onero_h1_lerobot/cli/__init__.py
+  s_27fceafa0c0b1a::t_d5d406e3cb2169 1
+src/onero_h1_lerobot/cli/lerobot_record.py
+  s_27fceafa0c0b1a::t_205886f01a8760 1-23
+src/onero_h1_lerobot/cli/lerobot_teleoperate.py
+  s_27fceafa0c0b1a::t_71f0572424fd34 1-32
+src/onero_h1_lerobot/cli/print_observation.py
+  s_27fceafa0c0b1a::t_1dcaa9ce38c89b 1-52
+src/onero_h1_lerobot/cli/record_episode.py
+  s_27fceafa0c0b1a::t_3078c817e2c28c 1-105
+src/onero_h1_lerobot/cli/safe_test_action.py
+  s_27fceafa0c0b1a::t_c67e0fe4d3396f 1-63
+src/onero_h1_lerobot/compat.py
+  s_27fceafa0c0b1a::t_1dc028d83289bc 1-88
+src/onero_h1_lerobot/config.py
+  s_27fceafa0c0b1a::t_a9043ce09855b6 1-149
+src/onero_h1_lerobot/robot.py
+  s_27fceafa0c0b1a::t_5912ed3ae229d9 1-401
+src/onero_h1_lerobot/ros_client.py
+  s_27fceafa0c0b1a::t_ac4745c7284bdf 1-609
+src/onero_h1_lerobot/safety.py
+  s_27fceafa0c0b1a::t_63c442d0d3d3b3 1-120
+src/onero_h1_lerobot/teleoperator.py
+  s_27fceafa0c0b1a::t_4b3903c42c705a 1-499
+src/onero_h1_lerobot/utils.py
+  s_27fceafa0c0b1a::t_c01f38d0a9e897 1-54
+tests/test_safety.py
+  s_27fceafa0c0b1a::t_8eb16ae8978766 1-125
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.16",
+  "base_commit_sha": "62f3a18566a6ce425efc4e110b3a7919c68a44e8",
+  "prompts": {},
+  "sessions": {
+    "s_27fceafa0c0b1a": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "019fac14-40d0-7901-af8e-e16ed9e2edcb",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Albert Lv <lvwenyi@onerobot.com>"
+    }
+  }
+}
