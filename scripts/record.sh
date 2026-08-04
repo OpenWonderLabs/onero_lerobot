@@ -20,7 +20,7 @@ usage() {
     echo "  --fps FPS                 录制帧率（默认 30）"
     echo "  --cameras CAM1,CAM2       相机列表（默认 head,left,right）"
     echo "  --no-cameras              禁用相机"
-    echo "  --root PATH               数据集本地存储路径"
+    echo "  --root PATH               数据集本地存储路径（默认 ~/lerobot_datasets）"
     echo "  --id ID                   机器人 ID（默认 onero_h1）"
     echo "  --action-left-arm-topic    左臂 action topic（覆盖遥操类型默认值）"
     echo "  --action-right-arm-topic   右臂 action topic（覆盖遥操类型默认值）"
@@ -65,6 +65,7 @@ SEND_HOLD_ACTION=""
 FINALIZE=""
 ROOT=""
 ROBOT_ID=""
+DATASET_ROOT="$HOME/lerobot_datasets"
 
 # --- 解析参数 ---
 while [[ $# -gt 0 ]]; do
@@ -95,6 +96,10 @@ if [ -z "$REPO_ID" ] || [ -z "$TASK" ]; then
     echo "[错误] --repo-id 和 --task 为必填参数"
     usage
 fi
+
+# 将 task 拼接到 repo_id 中，作为数据集子目录名（空格和非字母数字替换为下划线）
+TASK_SLUG=$(echo "$TASK" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/--*/-/g' | sed 's/^-//;s/-$//')
+REPO_ID="${REPO_ID}_${TASK_SLUG}"
 
 # --- 根据遥操类型设置默认 action topic ---
 case "$TELEOP_TYPE" in
@@ -182,7 +187,6 @@ fi
 
 CMD="$CMD --cameras $CAMERAS"
 [ -n "$NO_CAMERAS" ] && CMD="$CMD $NO_CAMERAS"
-[ -n "$ROOT" ] && CMD="$CMD --root $ROOT"
 [ -n "$ROBOT_ID" ] && CMD="$CMD --id $ROBOT_ID"
 [ -n "$SEND_HOLD_ACTION" ] && CMD="$CMD $SEND_HOLD_ACTION"
 [ -n "$FINALIZE" ] && CMD="$CMD $FINALIZE"
@@ -202,9 +206,14 @@ else
     echo "夹爪:   $ACTION_GRIPPER_TOPIC ($GRIPPER_TYPE)"
 fi
 echo "--------------------"
-echo ""
+# 如果用户指定了 --root，使用它作为根目录；否则用默认值
+ACTUAL_ROOT="${ROOT:-$DATASET_ROOT}"
+echo "存储路径: ${ACTUAL_ROOT}/${REPO_ID}"
 
 # --- 执行录制 ---
 echo "执行: $CMD"
 echo ""
+
+# 设置 LeRobot 数据集根目录，LeRobot 自动创建 <repo_id> 子目录
+export HF_LEROBOT_HOME="$ACTUAL_ROOT"
 eval "$CMD"

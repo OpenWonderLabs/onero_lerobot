@@ -120,7 +120,7 @@ onero-h1-record-episode \
 | `--fps` | int | `30` | 录制帧率 |
 | `--cameras` | str | `head,left,right` | 相机列表，逗号分隔 |
 | `--no-cameras` | flag | - | 禁用相机 |
-| `--root` | str | 默认路径 | 数据集本地存储路径 |
+| `--root` | str | `~/lerobot_datasets` | 数据集本地存储根目录。数据集以 `<repo_id>_<task>` 为子目录名保存 |
 | `--id` | str | `onero_h1` | 机器人 ID |
 | `--send-hold-action` | flag | - | 向机器人发布 hold-action（默认不发布） |
 | `--finalize` | flag | - | 录制完成后锁定数据集 |
