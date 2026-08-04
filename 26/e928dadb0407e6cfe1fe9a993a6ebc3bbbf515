@@ -1,0 +1,14 @@
+scripts/record.sh
+  h_88c7cc6e5eb614 209-211,217-218
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "26e928dadb0407e6cfe1fe9a993a6ebc3bbbf515",
+  "prompts": {},
+  "humans": {
+    "h_88c7cc6e5eb614": {
+      "author": "denglanjin <denglanjin@example.com>"
+    }
+  }
+}
