@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import json
+import logging
+import math
 import threading
 import time
+from datetime import datetime
 from types import SimpleNamespace
 from typing import Any
 
@@ -13,9 +16,30 @@ import numpy as np
 from .config import OneroH1Config
 from .utils import now_monotonic, quaternion_to_yaw
 
+_logger = logging.getLogger("onero_h1.ros_client")
+
 
 class RosImportError(RuntimeError):
     pass
+
+
+def _quaternion_to_euler(x: float, y: float, z: float, w: float) -> tuple[float, float, float]:
+    """Convert quaternion to roll, pitch, yaw."""
+    sinr_cosp = 2.0 * (w * x + y * z)
+    cosr_cosp = 1.0 - 2.0 * (x * x + y * y)
+    roll = math.atan2(sinr_cosp, cosr_cosp)
+
+    sinp = 2.0 * (w * y - z * x)
+    if abs(sinp) >= 1.0:
+        pitch = math.copysign(math.pi / 2.0, sinp)
+    else:
+        pitch = math.asin(sinp)
+
+    siny_cosp = 2.0 * (w * z + x * y)
+    cosy_cosp = 1.0 - 2.0 * (y * y + z * z)
+    yaw = math.atan2(siny_cosp, cosy_cosp)
+
+    return roll, pitch, yaw
 
 
 def _import_ros() -> SimpleNamespace:
@@ -24,13 +48,13 @@ def _import_ros() -> SimpleNamespace:
     try:
         import rclpy
         from diagnostic_msgs.msg import DiagnosticStatus
-        from geometry_msgs.msg import Twist
+        from geometry_msgs.msg import PoseWithCovarianceStamped, Twist
         from nav_msgs.msg import Odometry
         from rclpy.callback_groups import ReentrantCallbackGroup
         from rclpy.executors import MultiThreadedExecutor
         from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
         from sensor_msgs.msg import BatteryState, CompressedImage, JointState
-        from std_msgs.msg import Bool, Float64MultiArray, String
+        from std_msgs.msg import Bool, Float64MultiArray, Int32, String, UInt8
     except Exception as exc:  # pragma: no cover - depends on ROS2 installation
         raise RosImportError(
             "ROS2 Python packages are not available. Source your ROS2 Jazzy environment "
@@ -50,10 +74,13 @@ def _import_ros() -> SimpleNamespace:
         Odometry=Odometry,
         BatteryState=BatteryState,
         DiagnosticStatus=DiagnosticStatus,
+        PoseWithCovarianceStamped=PoseWithCovarianceStamped,
         Twist=Twist,
         Bool=Bool,
         Float64MultiArray=Float64MultiArray,
+        Int32=Int32,
         String=String,
+        UInt8=UInt8,
     )
 
 
@@ -77,6 +104,24 @@ class H1RosClient:
         self._battery: dict[str, float] = {}
         self._bumper_pressed: bool | None = None
         self._arm_diagnostics: dict[str, Any] = {}
+
+        # Gripper state (observation) — UInt8 0-255 mapped to 0.0-1.0
+        self._left_gripper_state: float = 0.0
+        self._right_gripper_state: float = 0.0
+
+        # Gripper pose (observation) — PoseWithCovarianceStamped
+        self._left_gripper_pose: list[float] | None = None  # [x, y, z, roll, pitch, yaw]
+        self._right_gripper_pose: list[float] | None = None
+
+        # Effort from arm joint state subscriptions (observation)
+        self._arm_effort: dict[str, float] = {}
+
+        # Cached positions for diff computation (observation)
+        self._cached_obs_positions: dict[str, float] = {}
+        self._cached_obs_time: float = 0.0
+        # Cached gripper poses for diff_pos computation
+        self._cached_gripper_poses: dict[str, Any] | None = None
+
         self._compressed_images: dict[str, bytes] = {}
         self._compressed_image_stamps: dict[str, float] = {}
         self._images: dict[str, np.ndarray] = {}
@@ -95,6 +140,16 @@ class H1RosClient:
         self._pub_base = None
         self._subscriptions: list[Any] = []
         self._callback_groups: list[Any] = []
+
+        # Camera FPS monitoring
+        self._camera_frame_counts: dict[str, int] = {}
+        self._camera_fps_cache: dict[str, float] = {}
+        self._fps_running = False
+        self._fps_thread: threading.Thread | None = None
+
+        # Data freshness warnings (debounce: only warn once per interval)
+        self._last_warn_time: dict[str, float] = {}
+        self._warn_interval_s: float = 10.0
 
     @property
     def is_connected(self) -> bool:
@@ -117,10 +172,12 @@ class H1RosClient:
         self._create_publishers()
         self._create_subscribers()
         self._start_image_decoders()
+        self._start_fps_monitor()
 
         self._spin_thread = threading.Thread(target=self._spin, name="onero_h1_ros_spin", daemon=True)
         self._spin_thread.start()
         self._connected = True
+        _logger.info("H1RosClient connected")
 
     def _spin(self) -> None:
         assert self.executor is not None
@@ -132,6 +189,8 @@ class H1RosClient:
 
     def _create_publishers(self) -> None:
         assert self.ros is not None and self.node is not None
+        if not self.config.send_action:
+            return
         arm_command_mode = self.config.arm_command_mode.lower()
         if arm_command_mode == "record_data":
             if self.config.use_left_arm and self.config.use_right_arm:
@@ -207,6 +266,36 @@ class H1RosClient:
                 self.node.create_subscription(self.ros.Bool, self.config.front_bumper_topic, self._on_bumper, 5)
             )
 
+        if self.config.use_gripper:
+            self._subscriptions.append(
+                self.node.create_subscription(
+                    self.ros.UInt8, self.config.left_gripper_state_topic, self._on_left_gripper_state, 10
+                )
+            )
+            self._subscriptions.append(
+                self.node.create_subscription(
+                    self.ros.UInt8, self.config.right_gripper_state_topic, self._on_right_gripper_state, 10
+                )
+            )
+
+        if self.config.use_gripper_pose:
+            self._subscriptions.append(
+                self.node.create_subscription(
+                    self.ros.PoseWithCovarianceStamped,
+                    self.config.left_gripper_pose_topic,
+                    self._on_left_gripper_pose,
+                    10,
+                )
+            )
+            self._subscriptions.append(
+                self.node.create_subscription(
+                    self.ros.PoseWithCovarianceStamped,
+                    self.config.right_gripper_pose_topic,
+                    self._on_right_gripper_pose,
+                    10,
+                )
+            )
+
         if self.config.use_cameras:
             camera_callback_group = self.ros.ReentrantCallbackGroup()
             self._callback_groups.append(camera_callback_group)
@@ -244,6 +333,8 @@ class H1RosClient:
                     self._joint_vel[name] = float(msg.velocity[i])
                 if i < len(msg.effort):
                     self._joint_effort[name] = float(msg.effort[i])
+                    if self.config.use_arm_effort:
+                        self._arm_effort[name] = float(msg.effort[i])
             for key in source_keys:
                 self._stamp(key)
             self._stamp("joint_states")
@@ -293,16 +384,38 @@ class H1RosClient:
             self._bumper_pressed = bool(msg.data)
             self._stamp("front_bumper")
 
+    def _on_left_gripper_state(self, msg: Any) -> None:
+        with self._lock:
+            self._left_gripper_state = float(msg.data) / 255.0
+            self._stamp("gripper")
+
+    def _on_right_gripper_state(self, msg: Any) -> None:
+        with self._lock:
+            self._right_gripper_state = float(msg.data) / 255.0
+
+    def _on_left_gripper_pose(self, msg: Any) -> None:
+        with self._lock:
+            p = msg.pose.pose.position
+            o = msg.pose.pose.orientation
+            roll, pitch, yaw = _quaternion_to_euler(float(o.x), float(o.y), float(o.z), float(o.w))
+            self._left_gripper_pose = [float(p.x), float(p.y), float(p.z), roll, pitch, yaw]
+            self._stamp("gripper_pose")
+
+    def _on_right_gripper_pose(self, msg: Any) -> None:
+        with self._lock:
+            p = msg.pose.pose.position
+            o = msg.pose.pose.orientation
+            roll, pitch, yaw = _quaternion_to_euler(float(o.x), float(o.y), float(o.z), float(o.w))
+            self._right_gripper_pose = [float(p.x), float(p.y), float(p.z), roll, pitch, yaw]
+
     def _on_compressed_image(self, camera_name: str, msg: Any) -> None:
         stamp = now_monotonic()
         with self._image_condition:
-            # Latest-frame slot: ROS callbacks stay light and never build a
-            # backlog. If decoding falls behind, older compressed frames are
-            # overwritten and the decoder works on the newest frame available.
             self._compressed_images[camera_name] = bytes(msg.data)
             self._compressed_image_stamps[camera_name] = stamp
             self._stamps[f"camera.{camera_name}"] = stamp
             self._image_condition.notify_all()
+        self._camera_frame_counts[camera_name] = self._camera_frame_counts.get(camera_name, 0) + 1
 
     def _decode_compressed_image(self, camera_name: str, data: bytes) -> np.ndarray | None:
         try:
@@ -318,6 +431,7 @@ class H1RosClient:
         image_data = np.frombuffer(data, dtype=np.uint8)
         image_bgr = cv2.imdecode(image_data, cv2.IMREAD_COLOR)
         if image_bgr is None:
+            _logger.warning("Failed to decode image for camera '%s'", camera_name)
             return None
         image_rgb = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
 
@@ -433,6 +547,11 @@ class H1RosClient:
                 "battery": dict(self._battery),
                 "front_bumper": self._bumper_pressed,
                 "arm_diagnostics": dict(self._arm_diagnostics),
+                "left_gripper_state": self._left_gripper_state,
+                "right_gripper_state": self._right_gripper_state,
+                "left_gripper_pose": list(self._left_gripper_pose) if self._left_gripper_pose else None,
+                "right_gripper_pose": list(self._right_gripper_pose) if self._right_gripper_pose else None,
+                "arm_effort": dict(self._arm_effort),
                 "images": images,
                 "image_decode_counts": dict(self._image_decode_counts),
                 "stamps": dict(self._stamps),
@@ -553,14 +672,70 @@ class H1RosClient:
         msg.angular.z = float(wz)
         self._pub_base.publish(msg)
 
+    def _warn_stale(self, key: str) -> None:
+        """Warn if data for a key hasn't been received recently (debounced)."""
+        now = now_monotonic()
+        last = self._stamps.get(key)
+        if last is not None and now - last < self.config.stale_observation_s:
+            return
+        last_warn = self._last_warn_time.get(key, 0.0)
+        if now - last_warn < self._warn_interval_s:
+            return
+        self._last_warn_time[key] = now
+        if last is None:
+            _logger.warning("No data received for '%s'", key)
+        else:
+            _logger.warning("Stale data for '%s' (%.1fs since last update)", key, now - last)
+
+    def _start_fps_monitor(self) -> None:
+        if not self.config.use_cameras:
+            return
+        self._fps_running = True
+        self._fps_thread = threading.Thread(
+            target=self._fps_monitor_thread, name="onero_h1_camera_fps", daemon=True
+        )
+        self._fps_thread.start()
+        _logger.info("Camera FPS monitor started (cameras: %s)", ", ".join(self.config.camera_names))
+
+    def _fps_monitor_thread(self) -> None:
+        """Periodically log camera FPS (every 5 seconds)."""
+        last_time = time.perf_counter()
+        while self._fps_running:
+            time.sleep(5.0)
+            current_time = time.perf_counter()
+            elapsed = current_time - last_time
+            fps_info: list[str] = []
+            for cam_name in sorted(self.config.camera_names):
+                count = self._camera_frame_counts.get(cam_name, 0)
+                self._camera_frame_counts[cam_name] = 0
+                real_fps = count / elapsed if elapsed > 0 else 0.0
+                self._camera_fps_cache[cam_name] = round(real_fps, 1)
+                fps_info.append(f"{cam_name}: {real_fps:.1f} fps")
+            if fps_info:
+                ts = datetime.now().strftime("%H:%M:%S")
+                _logger.info("[%s] Camera FPS: %s", ts, " | ".join(fps_info))
+            last_time = current_time
+
+    def _stop_fps_monitor(self) -> None:
+        self._fps_running = False
+        if self._fps_thread is not None:
+            self._fps_thread.join(timeout=2.0)
+
+    def get_camera_fps(self) -> dict[str, float]:
+        """Get latest camera FPS values."""
+        return dict(self._camera_fps_cache)
+
     def disconnect(self) -> None:
         if not self._connected:
             return
+
+        _logger.info("H1RosClient disconnecting...")
 
         if self.config.stop_base_on_disconnect:
             self.publish_base_velocity(0.0, 0.0, 0.0)
 
         self._stop_image_decoder_threads()
+        self._stop_fps_monitor()
 
         if self.executor is not None and self.node is not None:
             self.executor.remove_node(self.node)

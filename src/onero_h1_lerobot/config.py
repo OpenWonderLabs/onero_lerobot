@@ -62,11 +62,34 @@ class OneroH1Config(RobotConfig):
     use_right_arm: bool = True
     use_arm_velocity_action: bool = True
     use_lift: bool = True
-    use_head: bool = True
+    use_head: bool = False
     use_base_observation: bool = True
     use_base_velocity_action: bool = False
-    use_battery_observation: bool = True
-    use_bumper_observation: bool = True
+    use_battery_observation: bool = False
+    use_bumper_observation: bool = False
+
+    # Gripper (observation) — from /left_gripper_state, /right_gripper_state (UInt8 0-255)
+    use_gripper: bool = True
+    left_gripper_state_topic: str = "/left_gripper_state"
+    right_gripper_state_topic: str = "/right_gripper_state"
+
+    # Gripper pose (observation) — from /left_pose, /right_pose (PoseWithCovarianceStamped)
+    # Used for computing .diff_pos (spatial delta between frames)
+    use_gripper_pose: bool = True
+    left_gripper_pose_topic: str = "/left_pose"
+    right_gripper_pose_topic: str = "/right_pose"
+
+    # Effort (observation) — read from /left_joint_states, /right_joint_states effort field
+    use_arm_effort: bool = True
+
+    # Observation diff (computed locally) — frame-to-frame joint position delta
+    use_observation_diff: bool = True
+
+    # Action diff (computed locally) — frame-to-frame action position delta
+    use_action_diff: bool = True
+
+    # Whether to publish control commands to the robot (default: passive recording only)
+    send_action: bool = False
 
     # Camera configuration. Keys become LeRobot image feature names.
     use_cameras: bool = True
@@ -88,7 +111,7 @@ class OneroH1Config(RobotConfig):
     left_arm_state_topic: str = "/left_joint_states"
     right_arm_state_topic: str = "/right_joint_states"
     head_state_topic: str = "/head/joint_states"
-    odom_topic: str = "/odom"
+    odom_topic: str = "/agv/odom"
     front_bumper_topic: str = "/front_bumper"
     battery_topic: str = "/battery/state"
 
@@ -134,7 +157,7 @@ class OneroH1Config(RobotConfig):
 
     # Observation behavior
     stale_observation_s: float = 2.0
-    include_staleness_flags: bool = True
+    include_staleness_flags: bool = False
 
     @property
     def left_action_keys(self) -> tuple[str, ...]:

@@ -35,7 +35,7 @@ class OneroH1RosJointTeleopConfig(TeleoperatorConfig):
     use_right_arm: bool = True
     use_arm_velocity_action: bool = True
     use_lift: bool = True
-    use_head: bool = True
+    use_head: bool = False
     use_base_velocity_action: bool = False
 
     left_arm_topic: str = "/left/joint_states"
@@ -43,6 +43,19 @@ class OneroH1RosJointTeleopConfig(TeleoperatorConfig):
     lift_topic: str = "/lift/joint_states"
     head_topic: str = "/head/joint_states"
     base_velocity_topic: str = "/teleop/cmd_vel"
+
+    # Gripper action — from joystick_info
+    #   "int32":   std_msgs/Int32, 100-199 left, 200-299 right (主从遥操)
+    #   "float32": std_msgs/Float32, two separate topics (VR 遥操)
+    use_gripper: bool = True
+    gripper_topic: str = "/joystick_info"
+    gripper_type: str = "int32"  # "int32" | "float32"
+    # VR 遥操夹爪话题（gripper_type=float32 时使用）
+    left_gripper_topic: str = "/vr/left_gripper/open_ratio"
+    right_gripper_topic: str = "/vr/right_gripper/open_ratio"
+
+    # Action diff — frame-to-frame action position delta (computed locally)
+    use_action_diff: bool = True
 
     left_arm_joint_names: tuple[str, ...] = DEFAULT_LEFT_ARM_JOINTS
     right_arm_joint_names: tuple[str, ...] = DEFAULT_RIGHT_ARM_JOINTS
@@ -92,6 +105,10 @@ class OneroH1RosJointTeleop(Teleoperator):
         self._last_arm_velocities: dict[str, dict[str, float]] = {}
         self._subscriptions: list[Any] = []
 
+        # Cached action positions for diff computation
+        self._cached_action_positions: dict[str, float] = {}
+        self._cached_action_time: float = 0.0
+
     @property
     def is_connected(self) -> bool:
         return self._connected
@@ -111,6 +128,8 @@ class OneroH1RosJointTeleop(Teleoperator):
             names.extend(f"right_arm.{joint}.pos" for joint in self.config.right_arm_joint_names)
             if self.config.use_arm_velocity_action:
                 names.extend(f"right_arm.{joint}.vel" for joint in self.config.right_arm_joint_names)
+        if self.config.use_gripper:
+            names.extend(["left_gripper.pos", "right_gripper.pos"])
         if self.config.use_lift:
             names.append("lift.pos")
         if self.config.use_head:
@@ -193,6 +212,24 @@ class OneroH1RosJointTeleop(Teleoperator):
                     self.ros.Twist, self.config.base_velocity_topic, self._on_base_velocity, 10
                 )
             )
+        if self.config.use_gripper:
+            if self.config.gripper_type == "float32":
+                self._subscriptions.append(
+                    self.node.create_subscription(
+                        self.ros.Float32, self.config.left_gripper_topic, self._on_left_gripper_float32, 10
+                    )
+                )
+                self._subscriptions.append(
+                    self.node.create_subscription(
+                        self.ros.Float32, self.config.right_gripper_topic, self._on_right_gripper_float32, 10
+                    )
+                )
+            else:
+                self._subscriptions.append(
+                    self.node.create_subscription(
+                        self.ros.Int32, self.config.gripper_topic, self._on_gripper, 10
+                    )
+                )
 
     def _stamp(self, key: str) -> None:
         self._stamps[key] = now_monotonic()
@@ -382,12 +419,38 @@ class OneroH1RosJointTeleop(Teleoperator):
             self._action["base.wz"] = float(msg.angular.z)
             self._stamp("base")
 
+    def _on_gripper(self, msg: Any) -> None:
+        """Handle gripper action from joystick_info (Int32)."""
+        command = msg.data
+        with self._lock:
+            if 100 <= command < 200:
+                self._action["left_gripper.pos"] = (command - 100) / 100.0
+            elif 200 <= command < 300:
+                self._action["right_gripper.pos"] = (command - 200) / 100.0
+            self._stamp("gripper")
+
+    def _on_left_gripper_float32(self, msg: Any) -> None:
+        """Handle left gripper action from VR topic (Float32, 0.0-1.0)."""
+        value = float(msg.data)
+        with self._lock:
+            self._action["left_gripper.pos"] = max(0.0, min(1.0, value))
+            self._stamp("gripper")
+
+    def _on_right_gripper_float32(self, msg: Any) -> None:
+        """Handle right gripper action from VR topic (Float32, 0.0-1.0)."""
+        value = float(msg.data)
+        with self._lock:
+            self._action["right_gripper.pos"] = max(0.0, min(1.0, value))
+            self._stamp("gripper")
+
     def _required_stamp_keys(self) -> tuple[str, ...]:
         keys: list[str] = []
         if self.config.use_left_arm:
             keys.append("left_arm")
         if self.config.use_right_arm:
             keys.append("right_arm")
+        if self.config.use_gripper:
+            keys.append("gripper")
         if self.config.use_lift:
             keys.append("lift")
         if self.config.use_head:
@@ -448,7 +511,26 @@ class OneroH1RosJointTeleop(Teleoperator):
             if stale_sources:
                 raise RuntimeError("Teleop action is stale or unavailable: " + ", ".join(stale_sources))
 
-        return {key: float(action[key]) for key in self.action_feature_names}
+        result = {key: float(action[key]) for key in self.action_feature_names}
+
+        # Compute action diff (frame-to-frame delta)
+        if self.config.use_action_diff:
+            now_diff = now_monotonic()
+            dt = max(now_diff - self._cached_action_time, 1e-6)
+            for key in list(result.keys()):
+                if key.endswith(".pos"):
+                    motor_name = key.removesuffix(".pos")
+                    diff_key = f"{motor_name}.diff"
+                    cur = result[key]
+                    prev = self._cached_action_positions.get(key, cur)
+                    result[diff_key] = (cur - prev) / dt
+            # Update cache
+            for key, value in result.items():
+                if key.endswith(".pos"):
+                    self._cached_action_positions[key] = value
+            self._cached_action_time = now_diff
+
+        return result
 
     def send_feedback(self, feedback: dict[str, Any]) -> None:
         return None

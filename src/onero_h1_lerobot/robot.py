@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 import numpy as np
@@ -11,6 +12,8 @@ from .config import OneroH1Config
 from .ros_client import H1RosClient
 from .safety import ActionLimiter
 from .utils import normalize_action_dict, now_monotonic
+
+_logger = logging.getLogger("onero_h1.robot")
 
 
 class OneroH1Robot(Robot):
@@ -34,6 +37,12 @@ class OneroH1Robot(Robot):
         self._last_record_data_positions: dict[str, list[float]] = {}
         self._last_record_data_time: dict[str, float] = {}
         self._last_record_data_velocities: dict[str, list[float]] = {}
+
+        # Cached observation positions for diff computation
+        self._cached_obs_positions: dict[str, float] = {}
+        self._cached_obs_time: float = 0.0
+        # Cached gripper poses for diff_pos computation
+        self._cached_gripper_poses: dict[str, Any] | None = None
 
     @property
     def is_connected(self) -> bool:
@@ -80,6 +89,9 @@ class OneroH1Robot(Robot):
         if self.config.use_right_arm:
             for joint in self.config.right_arm_joint_names:
                 features[f"right_arm.{joint}.pos"] = float
+        if self.config.use_gripper:
+            features["left_gripper.pos"] = float
+            features["right_gripper.pos"] = float
         if self.config.use_lift:
             features["lift.pos"] = float
         if self.config.use_head:
@@ -93,6 +105,31 @@ class OneroH1Robot(Robot):
                 features[key] = float
         if self.config.use_bumper_observation:
             features["front_bumper.pressed"] = float
+
+        # Effort (observation)
+        if self.config.use_arm_effort:
+            for joint in self.config.left_arm_joint_names:
+                features[f"left_arm.{joint}.effort"] = float
+            for joint in self.config.right_arm_joint_names:
+                features[f"right_arm.{joint}.effort"] = float
+
+        # Observation diff (frame-to-frame joint position delta)
+        if self.config.use_observation_diff:
+            for joint in self.config.left_arm_joint_names:
+                features[f"left_arm.{joint}.diff"] = float
+            for joint in self.config.right_arm_joint_names:
+                features[f"right_arm.{joint}.diff"] = float
+            if self.config.use_gripper:
+                features["left_gripper.diff"] = float
+                features["right_gripper.diff"] = float
+            if self.config.use_lift:
+                features["lift.diff"] = float
+
+        # Gripper pose diff (spatial delta between frames)
+        if self.config.use_gripper_pose:
+            for prefix in ("left_gripper", "right_gripper"):
+                for key in ("x", "y", "z", "x_vel", "y_vel", "z_vel", "pitch", "roll", "yaw"):
+                    features[f"{prefix}.{key}.diff_pos"] = float
 
         if self.config.include_staleness_flags:
             for key in ["joint_states", "lift", "odom", "battery", "front_bumper"]:
@@ -116,18 +153,17 @@ class OneroH1Robot(Robot):
     def connect(self, calibrate: bool = True) -> None:
         if self.is_connected:
             return
+        _logger.info("OneroH1Robot connecting...")
         self.client = H1RosClient(self.config)
         self.client.connect()
-        # Scalar-only teleop can connect best-effort, but camera recording must
-        # not start until each camera has produced fresh decoded frames.
         ready = self.client.wait_for_first_observation(self.config.connect_timeout_s)
         if self.config.use_cameras and not ready:
-            self.client.disconnect()
-            self.client = None
-            raise TimeoutError(
-                "Timed out waiting for Onero H1 camera warm-up. "
-                "Each configured camera must decode multiple fresh frames before recording starts."
+            _logger.warning(
+                "Camera warm-up timed out (%.1fs). Missing camera frames will be filled with zeros. "
+                "Use --no-cameras if no cameras are available.",
+                self.config.connect_timeout_s,
             )
+        _logger.info("OneroH1Robot connected (cameras ready=%s)", ready)
         if calibrate and not self.is_calibrated:
             self.calibrate()
 
@@ -156,6 +192,9 @@ class OneroH1Robot(Robot):
         if self.config.use_right_arm:
             for joint in self.config.right_arm_joint_names:
                 obs[f"right_arm.{joint}.pos"] = float(joint_pos.get(joint, 0.0))
+        if self.config.use_gripper:
+            obs["left_gripper.pos"] = float(snap.get("left_gripper_state", 0.0))
+            obs["right_gripper.pos"] = float(snap.get("right_gripper_state", 0.0))
         if self.config.use_lift:
             obs["lift.pos"] = float(joint_pos.get(self.config.lift_joint_name, 0.0))
         if self.config.use_head:
@@ -170,6 +209,14 @@ class OneroH1Robot(Robot):
         if self.config.use_bumper_observation:
             obs["front_bumper.pressed"] = 1.0 if snap.get("front_bumper") else 0.0
 
+        # Effort
+        if self.config.use_arm_effort:
+            arm_effort: dict[str, float] = snap.get("arm_effort", {})
+            for joint in self.config.left_arm_joint_names:
+                obs[f"left_arm.{joint}.effort"] = float(arm_effort.get(joint, 0.0))
+            for joint in self.config.right_arm_joint_names:
+                obs[f"right_arm.{joint}.effort"] = float(arm_effort.get(joint, 0.0))
+
         if self.config.include_staleness_flags:
             for key in ["joint_states", "lift", "odom", "battery", "front_bumper"]:
                 obs[f"status.{key}.stale"] = self._is_stale(stamps, key, now)
@@ -181,10 +228,94 @@ class OneroH1Robot(Robot):
 
         return obs
 
+    def _compute_observation_diff(self, obs: dict[str, float]) -> dict[str, float]:
+        """Compute frame-to-frame joint position deltas (diff)."""
+        diff: dict[str, float] = {}
+        now = now_monotonic()
+        dt = max(now - self._cached_obs_time, 1e-6)
+
+        if self.config.use_left_arm:
+            for joint in self.config.left_arm_joint_names:
+                key = f"left_arm.{joint}.pos"
+                cur = obs.get(key, 0.0)
+                prev = self._cached_obs_positions.get(key, cur)
+                diff[f"left_arm.{joint}.diff"] = (cur - prev) / dt
+        if self.config.use_right_arm:
+            for joint in self.config.right_arm_joint_names:
+                key = f"right_arm.{joint}.pos"
+                cur = obs.get(key, 0.0)
+                prev = self._cached_obs_positions.get(key, cur)
+                diff[f"right_arm.{joint}.diff"] = (cur - prev) / dt
+        if self.config.use_gripper:
+            for gripper in ("left_gripper", "right_gripper"):
+                key = f"{gripper}.pos"
+                cur = obs.get(key, 0.0)
+                prev = self._cached_obs_positions.get(key, cur)
+                diff[f"{gripper}.diff"] = (cur - prev) / dt
+        if self.config.use_lift:
+            key = "lift.pos"
+            cur = obs.get(key, 0.0)
+            prev = self._cached_obs_positions.get(key, cur)
+            diff["lift.diff"] = (cur - prev) / dt
+
+        # Update cache
+        for key, value in obs.items():
+            if key.endswith(".pos"):
+                self._cached_obs_positions[key] = value
+        self._cached_obs_time = now
+
+        return diff
+
+    def _compute_gripper_diff_pos(self, snap: dict[str, Any]) -> dict[str, float]:
+        """Compute gripper spatial pose deltas between frames."""
+        _DIFF_POS_KEYS = ("x", "y", "z", "x_vel", "y_vel", "z_vel", "pitch", "roll", "yaw")
+        result: dict[str, float] = {}
+        left_pose = snap.get("left_gripper_pose")
+        right_pose = snap.get("right_gripper_pose")
+
+        if left_pose is None or right_pose is None:
+            # No gripper pose data available: fill all keys with zeros
+            for prefix in ("left_gripper", "right_gripper"):
+                for key in _DIFF_POS_KEYS:
+                    result[f"{prefix}.{key}.diff_pos"] = 0.0
+            return result
+
+        now = float(snap.get("time", now_monotonic()))
+        if self._cached_gripper_poses is not None:
+            dt = max(now - self._cached_gripper_poses["time"], 1e-6)
+            for prefix, new_pose in (("left_gripper", left_pose), ("right_gripper", right_pose)):
+                old_pose = self._cached_gripper_poses[prefix]
+                result[f"{prefix}.x.diff_pos"] = new_pose[0] - old_pose[0]
+                result[f"{prefix}.y.diff_pos"] = new_pose[1] - old_pose[1]
+                result[f"{prefix}.z.diff_pos"] = new_pose[2] - old_pose[2]
+                result[f"{prefix}.x_vel.diff_pos"] = (new_pose[0] - old_pose[0]) / dt
+                result[f"{prefix}.y_vel.diff_pos"] = (new_pose[1] - old_pose[1]) / dt
+                result[f"{prefix}.z_vel.diff_pos"] = (new_pose[2] - old_pose[2]) / dt
+                result[f"{prefix}.pitch.diff_pos"] = new_pose[4] - old_pose[4]
+                result[f"{prefix}.roll.diff_pos"] = new_pose[3] - old_pose[3]
+                result[f"{prefix}.yaw.diff_pos"] = new_pose[5] - old_pose[5]
+        else:
+            for prefix in ("left_gripper", "right_gripper"):
+                for key in _DIFF_POS_KEYS:
+                    result[f"{prefix}.{key}.diff_pos"] = 0.0
+
+        self._cached_gripper_poses = {
+            "left_gripper": list(left_pose),
+            "right_gripper": list(right_pose),
+            "time": now,
+        }
+        return result
+
     def get_observation(self) -> RobotObservation:
         client = self._require_connected()
         snap = client.snapshot()
         obs: dict[str, Any] = self._scalar_observation_from_snapshot(snap)
+
+        if self.config.use_observation_diff:
+            obs.update(self._compute_observation_diff(obs))
+
+        if self.config.use_gripper_pose:
+            obs.update(self._compute_gripper_diff_pos(snap))
 
         if self.config.use_cameras:
             images: dict[str, np.ndarray] = snap["images"]
@@ -352,6 +483,9 @@ class OneroH1Robot(Robot):
                 clipped.update(self._limiter.clip_action(other_action, observation, apply_delta=True))
         else:
             clipped = self._limiter.clip_action(normalized, observation)
+
+        if not self.config.send_action:
+            return clipped
 
         left_positions: list[float] | None = None
         left_velocities: list[float] | None = None
