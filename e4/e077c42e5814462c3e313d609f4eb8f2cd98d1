@@ -1,0 +1,40 @@
+README.md
+  h_88c7cc6e5eb614 17-37,53,120-217,275,277-278,282-293,314-320
+README_zh.md
+  h_88c7cc6e5eb614 7-27,37,45-46,48,52-80,143,146-149,176-234,300-309,313-319
+docs/lerobot_vr_teleop_overview.md
+  h_88c7cc6e5eb614 1-606
+docs/usage_passive_recording.md
+  h_88c7cc6e5eb614 5-27,33,52,113,117,143,149,151,153,157,163-285,287,289-349,355-386,394-414,437-463
+pyproject.toml
+  h_88c7cc6e5eb614 42
+scripts/record.sh
+  h_88c7cc6e5eb614 19,23,65,82,109-111,135-140,146,151,160
+scripts/replay.sh
+  h_88c7cc6e5eb614 1-110
+scripts/viz.sh
+  h_88c7cc6e5eb614 1-87
+src/onero_h1_lerobot/cli/record_episode.py
+  h_88c7cc6e5eb614 7,11,25-72,103-108,144,146-163,179-188,191-214,216,226-227,230-238,243-247,256-301,303-306,313-316,334-345,349
+src/onero_h1_lerobot/cli/replay_episode.py
+  h_88c7cc6e5eb614 1-122
+src/onero_h1_lerobot/config.py
+  h_88c7cc6e5eb614 76-80,99-103
+src/onero_h1_lerobot/robot.py
+  h_88c7cc6e5eb614 270-276,293-297,301-305,522-527
+src/onero_h1_lerobot/ros_client.py
+  h_88c7cc6e5eb614 141,227-230,680-697
+src/onero_h1_lerobot/teleoperator.py
+  h_88c7cc6e5eb614 25-29,32-34,49-50,55,57-58,60-61,83-129,221-225,510
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "e4e077c42e5814462c3e313d609f4eb8f2cd98d1",
+  "prompts": {},
+  "humans": {
+    "h_88c7cc6e5eb614": {
+      "author": "denglanjin <denglanjin@example.com>"
+    }
+  }
+}
