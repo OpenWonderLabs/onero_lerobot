@@ -232,8 +232,21 @@ def main() -> None:
         dataset_root = _os.path.join(_os.environ.get("HF_LEROBOT_HOME", _os.path.join(_os.path.expanduser("~"), "lerobot_datasets")), args.repo_id)
 
     if _os.path.exists(dataset_root):
-        _logger.info("Dataset already exists, resuming (will append new episode)")
-        dataset = LeRobotDataset.resume(args.repo_id, root=str(dataset_root))
+        _logger.info("Dataset already exists, checking feature compatibility...")
+        existing = LeRobotDataset.resume(args.repo_id, root=str(dataset_root))
+        new_keys = set(dataset_features.keys())
+        existing_keys = set(existing.features.keys())
+        missing = new_keys - existing_keys
+        extra = existing_keys - new_keys
+        if missing or extra:
+            _logger.error(
+                "Feature mismatch with existing dataset:%s%s."
+                " Use a different --repo-id to avoid data corruption.",
+                f" missing={list(missing)}" if missing else "",
+                f" extra={list(extra)}" if extra else "",
+            )
+            raise SystemExit(1)
+        dataset = existing
     else:
         dataset = LeRobotDataset.create(**create_kwargs)
 

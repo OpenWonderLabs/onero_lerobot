@@ -16,8 +16,7 @@ usage() {
     echo "  --root PATH               数据集本地存储路径（默认 ~/lerobot_datasets）"
     echo "  --id ID                   机器人 ID（默认 onero_h1）"
     echo "  --arm-command-mode MODE   手臂指令模式: record_data | movej（默认 record_data）"
-    echo "  --send-gripper            回放时发送夹爪指令（默认开启）"
-    echo "  --no-gripper              回放时不发送夹爪指令"
+    echo "  --no-gripper              回放时不发送夹爪指令（默认发送）"
     echo "  --no-cameras              禁用相机"
     echo "  --cameras CAM1,CAM2       相机列表（默认 head,left,right）"
     echo ""
@@ -41,7 +40,7 @@ FPS=""
 ROOT=""
 ROBOT_ID=""
 ARM_COMMAND_MODE="record_data"
-SEND_GRIPPER=""
+NO_GRIPPER=""
 NO_CAMERAS=""
 CAMERAS="head,left,right"
 DATASET_ROOT="$HOME/lerobot_datasets"
@@ -55,7 +54,7 @@ while [[ $# -gt 0 ]]; do
         --root)              ROOT="$2"; shift 2 ;;
         --id)                ROBOT_ID="$2"; shift 2 ;;
         --arm-command-mode)  ARM_COMMAND_MODE="$2"; shift 2 ;;
-        --send-gripper)      SEND_GRIPPER="--send-gripper"; shift ;;
+        --no-gripper)        NO_GRIPPER="--no-gripper"; shift ;;
         --no-cameras)        NO_CAMERAS="--no-cameras"; shift ;;
         --cameras)           CAMERAS="$2"; shift 2 ;;
         -h|--help)           usage ;;
@@ -89,7 +88,7 @@ CMD="$CMD --arm-command-mode $ARM_COMMAND_MODE"
 CMD="$CMD --cameras $CAMERAS"
 [ -n "$FPS" ] && CMD="$CMD --fps $FPS"
 [ -n "$ROBOT_ID" ] && CMD="$CMD --id $ROBOT_ID"
-[ -n "$SEND_GRIPPER" ] && CMD="$CMD $SEND_GRIPPER"
+[ -n "$NO_GRIPPER" ] && CMD="$CMD $NO_GRIPPER"
 [ -n "$NO_CAMERAS" ] && CMD="$CMD $NO_CAMERAS"
 
 # 数据集根目录
@@ -98,7 +97,7 @@ ACTUAL_ROOT="${ROOT:-$DATASET_ROOT}"
 echo "数据集: $REPO_ID"
 echo "Episode: $EPISODE"
 echo "手臂指令模式: $ARM_COMMAND_MODE"
-echo "发送夹爪: ${SEND_GRIPPER:+是}${SEND_GRIPPER:-否}"
+echo "发送夹爪: ${NO_GRIPPER:+否}${NO_GRIPPER:-是}"
 echo "存储路径: $ACTUAL_ROOT"
 echo ""
 

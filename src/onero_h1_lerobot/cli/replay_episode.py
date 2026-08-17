@@ -44,15 +44,10 @@ def parse_args() -> argparse.Namespace:
         help="Arm command mode: record_data (Float64MultiArray) or movej (JSON)",
     )
     parser.add_argument(
-        "--send-gripper",
-        action="store_true",
-        default=True,
-        help="Send gripper commands during replay. Default on.",
-    )
-    parser.add_argument(
         "--no-gripper",
         action="store_false",
         dest="send_gripper",
+        default=True,
         help="Disable gripper commands during replay.",
     )
     parser.add_argument("--no-cameras", action="store_true", help="Disable camera features")

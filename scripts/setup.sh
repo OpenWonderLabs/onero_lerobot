@@ -11,7 +11,7 @@ PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 if [[ "${1:-}" == "-h" ]] || [[ "${1:-}" == "--help" ]]; then
     echo "用法: sudo bash scripts/setup.sh"
     echo ""
-    echo "一键安装 oneroh1lerobot 及其所有依赖（LeRobot + OpenCV）"
+    echo "一键安装 oneroh1lerobot 及其所有依赖（LeRobot + OpenCV + 可视化 + 回放）"
     exit 0
 fi
 
@@ -116,6 +116,11 @@ $PIP_CMD install \
 # oneroh1lerobot + OpenCV
 echo "  安装 oneroh1lerobot + OpenCV..."
 $PIP_CMD install -e '.[camera]' $PIP_OPTS
+
+# 可视化依赖（Rerun + Foxglove，用于 lerobot-dataset-viz）
+echo "  安装可视化依赖（Rerun）..."
+$PIP_CMD install "rerun-sdk>=0.24.0,<0.34.0" "foxglove-sdk>=0.25.1,<0.26.0" $PIP_OPTS
+
 echo "  全部依赖安装完成"
 
 # --- 验证 ---
@@ -143,6 +148,12 @@ if python3 -c "import cv2; print(f'  OpenCV {cv2.__version__}: OK')" 2>/dev/null
 else
     echo "  [错误] OpenCV 导入失败"
     exit 1
+fi
+
+if python3 -c "import rerun_sdk" 2>/dev/null; then
+    echo "  Rerun (可视化): OK"
+else
+    echo "  [警告] Rerun 可视化依赖安装失败，可视化功能不可用"
 fi
 
 echo ""
