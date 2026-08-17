@@ -1,0 +1,20 @@
+scripts/replay.sh
+  h_88c7cc6e5eb614 19,43,57,91,100
+scripts/setup.sh
+  h_88c7cc6e5eb614 14,119-123,153-158
+src/onero_h1_lerobot/cli/record_episode.py
+  h_88c7cc6e5eb614 235-249
+src/onero_h1_lerobot/cli/replay_episode.py
+  h_88c7cc6e5eb614 50
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "c6a444940a0fe5092627aba04d370885bb3fef44",
+  "prompts": {},
+  "humans": {
+    "h_88c7cc6e5eb614": {
+      "author": "denglanjin <denglanjin@example.com>"
+    }
+  }
+}
