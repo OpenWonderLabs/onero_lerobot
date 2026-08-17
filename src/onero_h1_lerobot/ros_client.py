@@ -138,6 +138,7 @@ class H1RosClient:
         self._pub_lift = None
         self._pub_head = None
         self._pub_base = None
+        self._pub_gripper = None
         self._subscriptions: list[Any] = []
         self._callback_groups: list[Any] = []
 
@@ -222,6 +223,10 @@ class H1RosClient:
         if self.config.use_base_velocity_action:
             self._pub_base = self.node.create_publisher(
                 self.ros.Twist, self.config.base_velocity_topic, 10
+            )
+        if self.config.use_gripper:
+            self._pub_gripper = self.node.create_publisher(
+                self.ros.Int32, self.config.gripper_command_topic, 10
             )
 
     def _create_subscribers(self) -> None:
@@ -671,6 +676,24 @@ class H1RosClient:
         msg.linear.y = float(vy)
         msg.angular.z = float(wz)
         self._pub_base.publish(msg)
+
+    def publish_gripper(self, left_pos: float, right_pos: float) -> None:
+        """Publish gripper commands via /joystick_info (Int32).
+
+        Matches the onero-local-backend (onero-h-c11) gripper protocol:
+        - left  = int(left_pos  * 100 + 100), range [0, 99] → 100-199
+        - right = int(right_pos * 100 + 200), range [0, 99] → 200-299
+        """
+        if self._pub_gripper is None or self.ros is None:
+            return
+        left_val = int(max(0.0, min(1.0, float(left_pos))) * 100.0 + 100.0)
+        right_val = int(max(0.0, min(1.0, float(right_pos))) * 100.0 + 200.0)
+        msg = self.ros.Int32()
+        msg.data = left_val
+        self._pub_gripper.publish(msg)
+        msg = self.ros.Int32()
+        msg.data = right_val
+        self._pub_gripper.publish(msg)
 
     def _warn_stale(self, key: str) -> None:
         """Warn if data for a key hasn't been received recently (debounced)."""

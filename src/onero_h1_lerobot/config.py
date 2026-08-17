@@ -73,6 +73,11 @@ class OneroH1Config(RobotConfig):
     left_gripper_state_topic: str = "/left_gripper_state"
     right_gripper_state_topic: str = "/right_gripper_state"
 
+    # Gripper command (action) — published via /joystick_info (Int32)
+    # Encoding: left  = int(pos * 100 + 100), right = int(pos * 100 + 200)
+    # Matches onero-local-backend's onero-h-c11 gripper protocol.
+    gripper_command_topic: str = "/joystick_info"
+
     # Gripper pose (observation) — from /left_pose, /right_pose (PoseWithCovarianceStamped)
     # Used for computing .diff_pos (spatial delta between frames)
     use_gripper_pose: bool = True
@@ -90,6 +95,11 @@ class OneroH1Config(RobotConfig):
 
     # Whether to publish control commands to the robot (default: passive recording only)
     send_action: bool = False
+
+    # Whether to publish gripper commands via /joystick_info (Int32) when send_action is True.
+    # Set to False for homogeneous teleoperation to avoid interfering with the leader arm's
+    # direct gripper control path.
+    send_gripper_action: bool = True
 
     # Camera configuration. Keys become LeRobot image feature names.
     use_cameras: bool = True

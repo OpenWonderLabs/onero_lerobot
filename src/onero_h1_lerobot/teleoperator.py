@@ -22,7 +22,15 @@ class OneroH1RosJointTeleopConfig(TeleoperatorConfig):
     optional ``JointState`` for lift/head, and optional ``geometry_msgs/msg/Twist``
     for base velocity. If a JointState message names the configured joints, values
     are matched by name; otherwise positions are matched by order.
+
+    Teleop type determines default topics and gripper handling:
+    - homogeneous: /left/joint_states, /right/joint_states, /joystick_info (Int32)
+    - heterogeneous: /teleop/left/joint_states, /teleop/right/joint_states, /joystick_info (Int32)
+    - vr: /left_joint_states, /right_joint_states, separate gripper topics (Float32)
     """
+
+    # Teleop type: "homogeneous" | "heterogeneous" | "vr"
+    teleop_type: str = "homogeneous"
 
     ros_node_name: str = "onero_h1_ros_joint_teleop"
     ros_namespace: str = ""
@@ -38,21 +46,19 @@ class OneroH1RosJointTeleopConfig(TeleoperatorConfig):
     use_head: bool = False
     use_base_velocity_action: bool = False
 
-    left_arm_topic: str = "/left/joint_states"
-    right_arm_topic: str = "/right/joint_states"
+    left_arm_topic: str = ""
+    right_arm_topic: str = ""
     lift_topic: str = "/lift/joint_states"
     head_topic: str = "/head/joint_states"
     base_velocity_topic: str = "/teleop/cmd_vel"
 
-    # Gripper action — from joystick_info
-    #   "int32":   std_msgs/Int32, 100-199 left, 200-299 right (主从遥操)
-    #   "float32": std_msgs/Float32, two separate topics (VR 遥操)
+    # Gripper action
     use_gripper: bool = True
-    gripper_topic: str = "/joystick_info"
-    gripper_type: str = "int32"  # "int32" | "float32"
+    gripper_topic: str = ""
+    gripper_type: str = ""  # set by teleop_type
     # VR 遥操夹爪话题（gripper_type=float32 时使用）
-    left_gripper_topic: str = "/vr/left_gripper/open_ratio"
-    right_gripper_topic: str = "/vr/right_gripper/open_ratio"
+    left_gripper_topic: str = ""
+    right_gripper_topic: str = ""
 
     # Action diff — frame-to-frame action position delta (computed locally)
     use_action_diff: bool = True
@@ -73,6 +79,53 @@ class OneroH1RosJointTeleopConfig(TeleoperatorConfig):
     arm_filter_reset_after_s: float = 0.25
     require_fresh_action: bool = True
     allow_missing_keys: bool = False
+
+    def __post_init__(self) -> None:
+        """Apply teleop-type strategy defaults — only fills empty values."""
+        if self.teleop_type == "homogeneous":
+            self._apply_defaults(
+                left_arm="/left/joint_states",
+                right_arm="/right/joint_states",
+                gripper="/joystick_info",
+                gripper_type="int32",
+            )
+        elif self.teleop_type == "heterogeneous":
+            self._apply_defaults(
+                left_arm="/teleop/left/joint_states",
+                right_arm="/teleop/right/joint_states",
+                gripper="/joystick_info",
+                gripper_type="int32",
+            )
+        elif self.teleop_type == "vr":
+            self._apply_defaults(
+                left_arm="/left_joint_states",
+                right_arm="/right_joint_states",
+                gripper_type="float32",
+                left_gripper="/vr/left_gripper/open_ratio",
+                right_gripper="/vr/right_gripper/open_ratio",
+            )
+
+    def _apply_defaults(
+        self,
+        left_arm: str = "",
+        right_arm: str = "",
+        gripper: str = "",
+        gripper_type: str = "",
+        left_gripper: str = "",
+        right_gripper: str = "",
+    ) -> None:
+        if not self.left_arm_topic:
+            self.left_arm_topic = left_arm
+        if not self.right_arm_topic:
+            self.right_arm_topic = right_arm
+        if not self.gripper_topic:
+            self.gripper_topic = gripper
+        if not self.gripper_type:
+            self.gripper_type = gripper_type
+        if not self.left_gripper_topic:
+            self.left_gripper_topic = left_gripper
+        if not self.right_gripper_topic:
+            self.right_gripper_topic = right_gripper
 
 
 if hasattr(TeleoperatorConfig, "register_subclass"):
@@ -165,6 +218,11 @@ class OneroH1RosJointTeleop(Teleoperator):
         self.executor = self.ros.MultiThreadedExecutor(num_threads=self.config.executor_threads)
         self.executor.add_node(self.node)
         self._create_subscribers()
+        # 夹爪回调只设置一侧，另一侧需预置默认值，避免 get_action() 报 missing keys
+        if self.config.use_gripper and self.config.gripper_type != "float32":
+            with self._lock:
+                self._action.setdefault("left_gripper.pos", 0.0)
+                self._action.setdefault("right_gripper.pos", 0.0)
         self._spin_thread = threading.Thread(target=self._spin, name="onero_h1_teleop_ros_spin", daemon=True)
         self._spin_thread.start()
         self._connected = True
@@ -449,7 +507,7 @@ class OneroH1RosJointTeleop(Teleoperator):
             keys.append("left_arm")
         if self.config.use_right_arm:
             keys.append("right_arm")
-        if self.config.use_gripper:
+        if self.config.use_gripper and self.config.gripper_type == "float32":
             keys.append("gripper")
         if self.config.use_lift:
             keys.append("lift")

@@ -267,14 +267,19 @@ class OneroH1Robot(Robot):
         return diff
 
     def _compute_gripper_diff_pos(self, snap: dict[str, Any]) -> dict[str, float]:
-        """Compute gripper spatial pose deltas between frames."""
+        """Compute gripper spatial pose deltas between frames.
+
+        Aligned with onero-local-backend (onero-h-c11) diff_pos semantics:
+        - x / y / z  → raw position values (NOT deltas)
+        - x_vel / y_vel / z_vel  → (new - old) / dt  (velocity)
+        - pitch / roll / yaw  → (new - old) / dt  (velocity, NOT deltas)
+        """
         _DIFF_POS_KEYS = ("x", "y", "z", "x_vel", "y_vel", "z_vel", "pitch", "roll", "yaw")
         result: dict[str, float] = {}
         left_pose = snap.get("left_gripper_pose")
         right_pose = snap.get("right_gripper_pose")
 
         if left_pose is None or right_pose is None:
-            # No gripper pose data available: fill all keys with zeros
             for prefix in ("left_gripper", "right_gripper"):
                 for key in _DIFF_POS_KEYS:
                     result[f"{prefix}.{key}.diff_pos"] = 0.0
@@ -285,15 +290,19 @@ class OneroH1Robot(Robot):
             dt = max(now - self._cached_gripper_poses["time"], 1e-6)
             for prefix, new_pose in (("left_gripper", left_pose), ("right_gripper", right_pose)):
                 old_pose = self._cached_gripper_poses[prefix]
-                result[f"{prefix}.x.diff_pos"] = new_pose[0] - old_pose[0]
-                result[f"{prefix}.y.diff_pos"] = new_pose[1] - old_pose[1]
-                result[f"{prefix}.z.diff_pos"] = new_pose[2] - old_pose[2]
+                # x / y / z: raw position (matching onero-local-backend)
+                result[f"{prefix}.x.diff_pos"] = float(new_pose[0])
+                result[f"{prefix}.y.diff_pos"] = float(new_pose[1])
+                result[f"{prefix}.z.diff_pos"] = float(new_pose[2])
+                # velocity keys: (new - old) / dt
                 result[f"{prefix}.x_vel.diff_pos"] = (new_pose[0] - old_pose[0]) / dt
                 result[f"{prefix}.y_vel.diff_pos"] = (new_pose[1] - old_pose[1]) / dt
                 result[f"{prefix}.z_vel.diff_pos"] = (new_pose[2] - old_pose[2]) / dt
-                result[f"{prefix}.pitch.diff_pos"] = new_pose[4] - old_pose[4]
-                result[f"{prefix}.roll.diff_pos"] = new_pose[3] - old_pose[3]
-                result[f"{prefix}.yaw.diff_pos"] = new_pose[5] - old_pose[5]
+                # pitch / roll / yaw: velocity (matching onero-local-backend)
+                # pose format: [x, y, z, roll, pitch, yaw]
+                result[f"{prefix}.pitch.diff_pos"] = (new_pose[4] - old_pose[4]) / dt
+                result[f"{prefix}.roll.diff_pos"] = (new_pose[3] - old_pose[3]) / dt
+                result[f"{prefix}.yaw.diff_pos"] = (new_pose[5] - old_pose[5]) / dt
         else:
             for prefix in ("left_gripper", "right_gripper"):
                 for key in _DIFF_POS_KEYS:
@@ -509,6 +518,12 @@ class OneroH1Robot(Robot):
 
         if self.config.use_left_arm or self.config.use_right_arm:
             self._send_arm_action(client, left_positions, right_positions, left_velocities, right_velocities)
+
+        if self.config.use_gripper and self.config.send_gripper_action:
+            client.publish_gripper(
+                clipped.get("left_gripper.pos", 0.0),
+                clipped.get("right_gripper.pos", 0.0),
+            )
 
         if self.config.use_lift and "lift.pos" in clipped:
             client.publish_lift(clipped["lift.pos"])

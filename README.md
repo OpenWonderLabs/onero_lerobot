@@ -14,6 +14,27 @@ sent = robot.send_action({"head.yaw.pos": 0.05, "head.pitch.pos": 0.0})
 robot.disconnect()
 ```
 
+## Scripts Overview
+
+| Script | CLI Command | Purpose | Requires Robot |
+|--------|-------------|---------|:---:|
+| [record.sh](scripts/record.sh) | `onero-h1-record-episode` | Record teleoperation data | ✅ |
+| [replay.sh](scripts/replay.sh) | `onero-h1-replay-episode` | Replay data to robot | ✅ |
+| [viz.sh](scripts/viz.sh) | `lerobot-dataset-viz` | Offline dataset visualization | ❌ |
+
+```bash
+# Record
+bash scripts/record.sh --repo-id my/test --task "pick cup" --duration 60
+
+# Replay
+bash scripts/replay.sh --repo-id my/test --episode 0
+
+# Visualize (requires viz deps first)
+bash scripts/viz.sh --repo-id my/test --episode 0
+```
+
+> See [docs/usage_passive_recording.md](docs/usage_passive_recording.md) for detailed usage.
+
 ## Scope
 
 Implemented against the current SDK documentation:
@@ -29,6 +50,7 @@ Implemented against the current SDK documentation:
   - Dual-arm joint command, selectable via `arm_command_mode`:
     - `record_data` (default): a single `/record_data` (`std_msgs/msg/Float64MultiArray`) carrying `[left positions, left velocities, right positions, right velocities]`
     - `movej`: `/left_arm/movej` and `/right_arm/movej` (`std_msgs/msg/String` JSON with `joints` and optional `speed_scale`)
+  - Gripper command via `/joystick_info` (`std_msgs/msg/Int32`, encoding: left=`int(pos*100+100)`, right=`int(pos*200+200)`)
   - `/lift/joint_states/update` (`sensor_msgs/msg/JointState`)
   - `/head/joint_states/update` (`sensor_msgs/msg/JointState`)
   - Optional `/cmd_vel` base velocity action, disabled by default
@@ -95,7 +117,104 @@ onero-h1-record-episode \
   --finalize
 ```
 
-By default, recording stores a hold-position action and does **not** publish actions. Add `--send-hold-action` only if you intentionally want to publish the hold action at each frame.
+By default, recording stores a hold-position action and does **not** publish actions. Add `--send-hold-action` to publish control commands to the robot.
+
+**Graceful stop (recommended):** when recording without `--duration`, publish to the stop topic to exit cleanly between frames:
+
+```bash
+# Terminal 1: start recording
+onero-h1-record-episode --repo-id my/test --task "teleop" --teleop-type homogeneous
+
+# Terminal 2: stop gracefully
+ros2 topic pub /stop_recording std_msgs/msg/Bool "data: true" -1
+```
+
+This avoids the truncated image / partial frame issues that Ctrl+C can cause. Ctrl+C is disabled; use the stop topic instead. See [docs/usage_passive_recording.md](docs/usage_passive_recording.md) for details.
+
+**Teleop types** (set via `--teleop-type`):
+
+| Type | Arm action input | Gripper action input | send_action output |
+|------|-----------------|---------------------|--------------------|
+| `homogeneous` (default) | `/left/joint_states`, `/right/joint_states` | `/joystick_info` (Int32) | `/record_data` only (no gripper) |
+| `heterogeneous` | `/teleop/left/joint_states`, `/teleop/right/joint_states` | `/joystick_info` (Int32) | TBD |
+| `vr` | `/left_joint_states`, `/right_joint_states` | `/vr/left_gripper/open_ratio`, `/vr/right_gripper/open_ratio` (Float32) | TBD |
+
+**Note on homogeneous mode with `--send-hold-action`:** the leader arm program directly publishes to `/record_data` and `/joystick_info` to control the follower. To let oneroh1lerobot take over, remap the leader's topics:
+
+```bash
+# Leader arm side
+your_leader_program \
+    --ros-args -r /record_data:=/leader/arm_data \
+               -r /joystick_info:=/leader/joystick
+
+# Recording side
+onero-h1-record-episode \
+    --repo-id my/test --task "teleop_test" \
+    --duration 180 --teleop-type homogeneous \
+    --action-gripper-topic /leader/joystick \
+    --send-hold-action
+```
+
+In homogeneous mode, only arm joint commands are published via `/record_data`; gripper commands are **not** published, since the leader arm handles gripper directly.
+
+## Replaying a recorded episode
+
+Replay a recorded episode on the robot to verify data quality:
+
+```bash
+# Replay episode 0 (sends gripper commands by default)
+onero-h1-replay-episode --repo-id my/test --episode 0
+
+# Replay without gripper commands
+onero-h1-replay-episode --repo-id my/test --episode 0 --no-gripper
+
+# Replay with custom arm command mode
+onero-h1-replay-episode --repo-id my/test --episode 0 --arm-command-mode movej
+
+# Using the script
+bash scripts/replay.sh --repo-id my/test --episode 0
+```
+
+The replay reads actions from the dataset and sends them to the robot via `send_action()`, using the same arm command mode and gripper settings as the recording pipeline.
+
+## Visualizing a recorded episode
+
+Inspect the dataset frames offline with LeRobot's built-in viewer:
+
+```bash
+# Requires: pip install 'lerobot[dataset_viz]' --break-system-packages
+```
+
+**Option 1: Local (Recommended)** — Run directly on the robot's computer with a desktop:
+
+```bash
+bash scripts/viz.sh --repo-id my/test --episode 0
+```
+
+**Option 2: SSH remote** — Start on the robot, connect from your local machine:
+
+```bash
+# On the robot
+bash scripts/viz.sh --repo-id my/test --episode 0 --mode distant
+
+# On your local machine
+pip install rerun-sdk
+rerun --connect rerun+http://<robot-ip>:9876/proxy
+```
+
+**Option 3: Save to file** — Save as rrd, transfer to any machine with a display:
+
+```bash
+# On the robot
+bash scripts/viz.sh --repo-id my/test --episode 0 --save 1 --output-dir ./output
+
+# Transfer and view locally
+scp -r wlab@<robot-ip>:~/oneroh1lerobot/output ./output
+pip install rerun-sdk
+rerun output/*.rrd
+```
+
+This opens a rerun viewer showing camera images, joint positions, and actions frame by frame.
 
 ## LeRobot CLI usage
 
@@ -153,11 +272,24 @@ Default action feature order:
 
 ```text
 left_arm.joint1-l.pos ... left_arm.joint7-l.pos
+left_arm.joint1-l.vel ... left_arm.joint7-l.vel
 right_arm.joint1-r.pos ... right_arm.joint7-r.pos
+right_arm.joint1-r.vel ... right_arm.joint7-r.vel
+left_gripper.pos, right_gripper.pos
 lift.pos
-head.pitch.pos
-head.yaw.pos
 ```
+
+Observation features additionally include `.effort`, `.diff` (frame-to-frame position delta), and `.diff_pos` (gripper spatial deltas: x/y/z = raw position, pitch/roll/yaw = velocity).
+
+When `--send-hold-action` is enabled, control commands are published to:
+
+| Module | Topic | Type | Description |
+|--------|-------|------|-------------|
+| Arm | `/record_data` | `Float64MultiArray` | 28 floats (left7 pos + left7 vel + right7 pos + right7 vel) |
+| Gripper | `/joystick_info` | `Int32` | left=`int(pos*100+100)`, right=`int(pos*200+200)` (heterogeneous/vr only) |
+| Lift | `/lift/joint_states/update` | `JointState` | when enabled |
+| Head | `/head/joint_states/update` | `JointState` | when enabled |
+| Base | `/cmd_vel` | `Twist` | when enabled |
 
 If the robot URDF or driver uses different joint names, override them in `OneroH1Config`:
 
@@ -178,6 +310,13 @@ The adapter clips actions using conservative limits from the SDK docs:
 - base velocity action disabled by default
 
 This does not replace collision checking, MoveIt planning, hardware emergency stop, or human supervision.
+
+## Other Tools
+
+| Command | Purpose |
+|---------|---------|
+| `onero-h1-print-observation` | Print current observations for debugging |
+| `onero-h1-safe-test-action` | Send a safe test action (head motion), supports `--dry-run` |
 
 ## Upstreaming into LeRobot
 
