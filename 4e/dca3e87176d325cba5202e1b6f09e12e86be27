@@ -1,0 +1,21 @@
+onero_h1_lerobot/reports/assets/smolvla_joint_ranges.json
+  s_4b2453d51a6d62::t_0b4b40a64cdae8 1-77
+onero_h1_lerobot/reports/h1_lerobot_validation_report.html
+  s_4b2453d51a6d62::t_055ee4ffe7ea43 18,25-26,52-53,60,123-145,149
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "4edca3e87176d325cba5202e1b6f09e12e86be27",
+  "prompts": {},
+  "sessions": {
+    "s_4b2453d51a6d62": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a036d7-1d55-75ba-aae4-dbfbc1ab8d3c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Albert Lv <lvwenyi@onerobot.com>"
+    }
+  }
+}
