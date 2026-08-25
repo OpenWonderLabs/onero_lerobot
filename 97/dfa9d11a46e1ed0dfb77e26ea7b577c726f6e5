@@ -1,0 +1,174 @@
+onero_h1_lerobot/src/onero_h1_lerobot/config.py
+  s_4b2453d51a6d62::t_73e0208899fdfd 60-64
+  s_4b2453d51a6d62::t_f82104f6a02f89 68-70,72
+  s_4b2453d51a6d62::t_61aad3b8cf3577 73
+onero_h1_lerobot/pyproject.toml
+  s_4b2453d51a6d62::t_d30e854464553d 45
+  s_4b2453d51a6d62::t_09ad442cbc8e64 48
+  s_4b2453d51a6d62::t_e8a2429440c9ec 10,23,27,31-35,37-38,56
+  s_4b2453d51a6d62::t_5f15e3360d8b9d 44
+onero_h1_lerobot/scripts/sim_h1.sh
+  s_4b2453d51a6d62::t_30d02ccc6c6d8a 1-2,6-19
+  s_4b2453d51a6d62::t_8134399c404950 21-25
+  s_4b2453d51a6d62::t_5ce0b7a4ce6adb 3-5,20
+onero_h1_lerobot/urdf/README.md
+  s_4b2453d51a6d62::t_f105b3a1cb1dae 1-8,10-14,25-35,38-41
+  s_4b2453d51a6d62::t_22279fce2788dc 9,15-24,36-37
+onero_h1_lerobot/docs/usage_passive_recording.md
+  s_4b2453d51a6d62::t_4a8a5bba26c7b6 65,282-450
+  s_4b2453d51a6d62::t_a081f343b2c108 150
+  s_4b2453d51a6d62::t_5cbcb9c4201281 62-64
+  s_4b2453d51a6d62::t_db54ad61195f9d 66-68,147-149
+  s_4b2453d51a6d62::t_b294ddad613943 151-153,279-281
+  s_4b2453d51a6d62::t_3b7ee0da2331b5 451-453
+onero_h1_lerobot/urdf/urdf/X1_mjcf_with_grippers.urdf
+  s_4b2453d51a6d62::t_c42479a0dfcbd7 1-1024
+onero_h1_lerobot/scripts/record.sh
+  s_4b2453d51a6d62::t_90c680738c3caa 33
+  s_4b2453d51a6d62::t_44abce7f236797 1-32,34-172
+.gitignore
+  s_4b2453d51a6d62::t_5aba77498b1ac5 1-5
+onero_h1_lerobot/src/onero_h1_lerobot/cli/record_episode.py
+  s_4b2453d51a6d62::t_ec0fb38d5507e7 22,95,100,103,108,116-121,125-126,130-131,135-136,140-141,145-146,151-152,154,156-157,163-164,168,192,202,293,391-394
+  s_4b2453d51a6d62::t_e5a8e01ff0c2db 53,241-251,253-274
+  s_4b2453d51a6d62::t_45f4b3009cf532 19-21
+  s_4b2453d51a6d62::t_a041146964abbb 23-25,50-52
+  s_4b2453d51a6d62::t_8969c658e3aa39 54-56
+  s_4b2453d51a6d62::t_ff0a49d5e3f4e3 96-99
+  s_4b2453d51a6d62::t_b68d86f70eff3a 101
+  s_4b2453d51a6d62::t_99c3651b5267f0 104-107
+  s_4b2453d51a6d62::t_fa34891e0baab7 122-124
+  s_4b2453d51a6d62::t_2a67ee70b6de7b 127-129
+  s_4b2453d51a6d62::t_5e24de680010d9 132-134
+  s_4b2453d51a6d62::t_9653e02a8cdd01 137-139
+  s_4b2453d51a6d62::t_e419dfc19c6d5b 142-144
+  s_4b2453d51a6d62::t_513bd9b9afb6ca 147-150
+  s_4b2453d51a6d62::t_5b72abeb43547d 153
+  s_4b2453d51a6d62::t_6fdc982b41bb33 155
+  s_4b2453d51a6d62::t_be07625da0339b 158-162
+  s_4b2453d51a6d62::t_56d65fbb70cfab 165-167
+  s_4b2453d51a6d62::t_35d3ba727a3a05 189-191
+  s_4b2453d51a6d62::t_903069215e037d 199-201
+  s_4b2453d51a6d62::t_1acfeaa9f0b53f 203-205
+  s_4b2453d51a6d62::t_80e01fe31da3ba 238-240
+  s_4b2453d51a6d62::t_0472d46a59b814 275-277
+  s_4b2453d51a6d62::t_bbb09e0e35aa8e 290-292
+  s_4b2453d51a6d62::t_a0e8da1cf36136 294
+onero_h1_lerobot/scripts/start_ros_bridge.sh
+  s_4b2453d51a6d62::t_8352b8874b7b1e 1-12
+onero_h1_lerobot/src/onero_h1_lerobot/teleoperator.py
+  s_4b2453d51a6d62::t_7ed980f35e77aa 44-46
+  s_4b2453d51a6d62::t_5638fa1dd7a972 47
+onero_h1_lerobot/scripts/start_mujoco_viewer.sh
+  s_4b2453d51a6d62::t_3617f278454df0 1-7,9-29
+  s_4b2453d51a6d62::t_94ba3083571bb0 8
+onero_h1_lerobot/scripts/setup.sh
+  s_4b2453d51a6d62::t_d36395f116deef 40-60
+  s_4b2453d51a6d62::t_c7029c2e9aa2bd 22-28,124,139-146
+  s_4b2453d51a6d62::t_dc23ebadb1b8e8 31-35,64-114,125-129,136
+  s_4b2453d51a6d62::t_65df22dac547c3 1-21,29-30,36-39,61-63,115-123,130-135,137-138,147-162
+onero_h1_lerobot/src/onero_h1_lerobot/compat.py
+  s_4b2453d51a6d62::t_f79d9668249422 31-33
+  s_4b2453d51a6d62::t_2f9648fcf5a97e 18-25
+NOTES.md
+  s_27fceafa0c0b1a::t_d1eb888dbf282f 13,17-27,31-37,39-42
+onero_h1_lerobot/README_zh.md
+  s_4b2453d51a6d62::t_7c03aa02fa5fb5 87-88,90,93-96,99,102-103,106,109-119,122,125-132,137-158,161-169,171-172,178-203
+  s_4b2453d51a6d62::t_161702646ce743 15,204,208,210,214,221,225,233,302-304,306-308,311-319,322,324
+  s_4b2453d51a6d62::t_0bdeafaf3fa2db 45-46,285,290,295,298-300
+  s_4b2453d51a6d62::t_2fd4207ccab09d 320-321
+  s_4b2453d51a6d62::t_fd806e56c6b719 12-14
+  s_4b2453d51a6d62::t_92bc0050ff303c 16-18
+  s_4b2453d51a6d62::t_63ebd9e0550f13 43-44
+  s_4b2453d51a6d62::t_95d37684c4b89c 47-49
+  s_4b2453d51a6d62::t_a3049801db5817 84-86
+  s_4b2453d51a6d62::t_132835834b685c 205-207
+  s_4b2453d51a6d62::t_0a9a037d608b04 209
+  s_4b2453d51a6d62::t_6aefc252ae1101 211-213
+  s_4b2453d51a6d62::t_aa1bfde53a5933 215-220
+  s_4b2453d51a6d62::t_b2a07622e0d82f 222-224
+  s_4b2453d51a6d62::t_f62ade631c88cb 226-228,230-232
+  s_4b2453d51a6d62::t_e49c449eda8d27 234-235
+  s_4b2453d51a6d62::t_1e2a02379438d5 301
+onero_h1_lerobot/README.md
+  s_4b2453d51a6d62::t_97504cb09defd0 62-63,122-187
+  s_4b2453d51a6d62::t_23cc0d1b3c58f3 298-299
+  s_4b2453d51a6d62::t_9ee9b193c04cba 267,274,279-282,309
+  s_4b2453d51a6d62::t_5dabbbc141f1a8 25,192,198,209,284-297,302-303
+  s_4b2453d51a6d62::t_624be6c03bd1e6 22-24
+  s_4b2453d51a6d62::t_390a460df630b2 26-28
+  s_4b2453d51a6d62::t_1cc2d2d71cd80c 188-191
+  s_4b2453d51a6d62::t_7046367b5426c2 193-197
+  s_4b2453d51a6d62::t_ae67238c212d03 199-201,206-208
+  s_4b2453d51a6d62::t_bf8102c0d7094b 210-212
+  s_4b2453d51a6d62::t_fbd419d37ff7e4 283
+  s_4b2453d51a6d62::t_32b5e2a53a4b4f 304-308
+  s_4b2453d51a6d62::t_c18a20c2254b31 310-312
+onero_h1_lerobot/scripts/deploy_mujoco_smoke.py
+  s_4b2453d51a6d62::t_fe22c438324345 1-73
+onero_h1_lerobot/scripts/setup_mujoco_uv.sh
+  s_4b2453d51a6d62::t_80e61716ea8d94 8-15
+  s_4b2453d51a6d62::t_5747c5eddc563f 1-7,16-41
+onero_h1_lerobot/tests/test_action_schema.py
+  s_4b2453d51a6d62::t_754c71de97bb25 1-37
+onero_h1_lerobot/src/onero_h1_lerobot/cli/lerobot_rollout.py
+  s_4b2453d51a6d62::t_2a268f8e2eedad 1-22
+onero_h1_lerobot/src/onero_h1_lerobot/bridge.py
+  s_4b2453d51a6d62::t_31bc291b6f81ec 1-103
+onero_h1_lerobot/src/onero_h1_lerobot/cli/ros_bridge.py
+  s_4b2453d51a6d62::t_88a7a33ac5150e 1-20
+onero_h1_lerobot/scripts/h1_topic_sim.py
+  s_4b2453d51a6d62::t_650ba6c66e1790 181-185
+  s_4b2453d51a6d62::t_7fa4d83f0c81d1 16,75-83,93-101,144-145,148-154,156,158-159,176-180,186,255-258,290-293,312-317,446-447,454-461
+  s_4b2453d51a6d62::t_500bcb90952d9a 340-341
+  s_4b2453d51a6d62::t_78846547df064f 34-41,47-49,51,155,157,160-165,174-175,270-274,276,278-282,294-311
+  s_4b2453d51a6d62::t_095186c96fb617 1-15,17-22,24-33,50,52-74,84-92,102-142,146-147,187-192,196-226,228-254,259-269,318-339,342-445,448-453,462-463,465-467,470-473
+  s_4b2453d51a6d62::t_26f4186e4e602e 42-46,166-173,283-289
+  s_4b2453d51a6d62::t_8bf2742b9cdaba 143,193-195
+  s_4b2453d51a6d62::t_3c46324ced7407 227,275,277
+  s_4b2453d51a6d62::t_1e5b777cabcb88 23,464,468-469
+onero_h1_lerobot/src/onero_h1_lerobot/robot.py
+  s_4b2453d51a6d62::t_140d9088b4794b 10,17-18,34,43-48,51,161-165,170-173,175,204-206,221-228,240-326,328-329,492-493,515-517,541-546,566-568
+  s_4b2453d51a6d62::t_9cc0a3f90add72 76-78,96
+  s_4b2453d51a6d62::t_04e166914be083 404-407,435-438,446
+  s_4b2453d51a6d62::t_1fba7dd86b390d 97-98
+  s_4b2453d51a6d62::t_51b52e53c4ccaa 160
+onero_h1_lerobot/scripts/replay.sh
+  s_4b2453d51a6d62::t_11931915803608 1-109
+onero_h1_lerobot/scripts/viz.sh
+  s_4b2453d51a6d62::t_1da33babb9f4fa 1-87
+onero_h1_lerobot/src/onero_h1_lerobot/ros_client.py
+  s_4b2453d51a6d62::t_c76b80e09bc256 6-7,10,19-20,26-44,51,57,77,81,83,107-124,141,145-154,176,181,193-194,227-230,274-303,341-342,392-415,423,439,555-559,680-750,755-756,761
+onero_h1_lerobot/urdf/urdf/X1_URDF_V1_2.csv
+  s_4b2453d51a6d62::t_affdcd8f65477f 1-31
+onero_h1_lerobot/urdf/urdf/X1_URDF_V1_2.urdf
+  s_4b2453d51a6d62::t_17108aa2f00b32 1-1669
+onero_h1_lerobot/urdf/urdf/X1_mjcf.urdf
+  s_4b2453d51a6d62::t_b4457cad3256b1 1-1669
+onero_h1_lerobot/uv.lock
+  s_4b2453d51a6d62::t_e1d750f73dfe61 1-2589
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "97dfa9d11a46e1ed0dfb77e26ea7b577c726f6e5",
+  "prompts": {},
+  "sessions": {
+    "s_27fceafa0c0b1a": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "019fac14-40d0-7901-af8e-e16ed9e2edcb",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Albert Lv <lvwenyi@onerobot.com>"
+    },
+    "s_4b2453d51a6d62": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a036d7-1d55-75ba-aae4-dbfbc1ab8d3c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Albert Lv <lvwenyi@onerobot.com>"
+    }
+  }
+}
