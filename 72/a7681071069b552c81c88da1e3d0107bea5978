@@ -1,0 +1,22 @@
+onero_h1_lerobot/reports/assets/dataset_sample.json
+  s_4b2453d51a6d62::t_90b6e6e5f37003 1-359
+onero_h1_lerobot/reports/h1_lerobot_validation_report.html
+  s_4b2453d51a6d62::t_7dd03bd1ecb531 1-127,129-141
+  s_4b2453d51a6d62::t_079401b949b85e 128
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "72a7681071069b552c81c88da1e3d0107bea5978",
+  "prompts": {},
+  "sessions": {
+    "s_4b2453d51a6d62": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a036d7-1d55-75ba-aae4-dbfbc1ab8d3c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Albert Lv <lvwenyi@onerobot.com>"
+    }
+  }
+}
