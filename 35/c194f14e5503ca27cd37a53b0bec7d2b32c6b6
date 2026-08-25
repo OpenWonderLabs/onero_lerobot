@@ -1,0 +1,25 @@
+onero_h1_lerobot/src/onero_h1_lerobot/config.py
+  s_4b2453d51a6d62::t_c396433fb277dd 74-76,93,98,101
+onero_h1_lerobot/README_zh.md
+  s_4b2453d51a6d62::t_b342ee330da70b 300
+onero_h1_lerobot/README.md
+  s_4b2453d51a6d62::t_ed867f6963963f 282
+onero_h1_lerobot/tests/test_action_schema.py
+  s_4b2453d51a6d62::t_67358700d00c58 25-28
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "35c194f14e5503ca27cd37a53b0bec7d2b32c6b6",
+  "prompts": {},
+  "sessions": {
+    "s_4b2453d51a6d62": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a036d7-1d55-75ba-aae4-dbfbc1ab8d3c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Albert Lv <lvwenyi@onerobot.com>"
+    }
+  }
+}
