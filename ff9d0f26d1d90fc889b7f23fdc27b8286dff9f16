@@ -1,0 +1,16 @@
+docs/usage_passive_recording.md
+  h_88c7cc6e5eb614 123
+scripts/record.sh
+  h_88c7cc6e5eb614 23,66,185,191
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "ff9d0f26d1d90fc889b7f23fdc27b8286dff9f16",
+  "prompts": {},
+  "humans": {
+    "h_88c7cc6e5eb614": {
+      "author": "denglanjin <denglanjin@example.com>"
+    }
+  }
+}

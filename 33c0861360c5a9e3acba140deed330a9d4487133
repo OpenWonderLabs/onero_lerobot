@@ -1,0 +1,29 @@
+README.md
+  s_206f22150e6c73::t_e8ab9ee6f29e37 27,29-31
+src/onero_h1_lerobot/ros_client.py
+  s_206f22150e6c73::t_2af1ca76fda231 213-214
+  s_206f22150e6c73::t_92f7031f73558d 218
+README_zh.md
+  s_206f22150e6c73::t_3315d113ea2fc1 27,29-31
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.3",
+  "base_commit_sha": "33c0861360c5a9e3acba140deed330a9d4487133",
+  "prompts": {},
+  "humans": {
+    "h_11773f21254716": {
+      "author": "DengLanJin <denglanjin@onerobot.com>"
+    }
+  },
+  "sessions": {
+    "s_206f22150e6c73": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6fd441d5-039d-43ef-902d-018c6dba09ab",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "DengLanJin <denglanjin@onerobot.com>"
+    }
+  }
+}

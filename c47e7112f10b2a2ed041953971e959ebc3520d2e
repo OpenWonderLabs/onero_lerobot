@@ -1,0 +1,30 @@
+README_zh.md
+  h_88c7cc6e5eb614 5,9,11-18,20,22-27,29,31,33-35,37-39,41,44-47,50,53-54,57,60-68,71,74-81,86-88,91-106,108-117,125-127,133,143-144,149,166,179,181-182,186,190
+docs/usage_passive_recording.md
+  h_88c7cc6e5eb614 1-182
+scripts/record.sh
+  h_88c7cc6e5eb614 1-210
+scripts/setup.sh
+  h_88c7cc6e5eb614 1-158
+src/onero_h1_lerobot/cli/record_episode.py
+  h_88c7cc6e5eb614 6,11-21,45-51,61-91,97,124,127-133,135-169,173
+src/onero_h1_lerobot/config.py
+  h_88c7cc6e5eb614 65,68-92,114,160
+src/onero_h1_lerobot/robot.py
+  h_88c7cc6e5eb614 5,16-17,41-46,92-94,109-133,156,161-164,166,195-197,212-219,231-308,314-319,487-489
+src/onero_h1_lerobot/ros_client.py
+  h_88c7cc6e5eb614 6-7,10,19-20,26-44,51,57,77,81,83,107-124,144-153,175,180,192-193,269-298,336-337,387-410,418,434,550-554,675-727,732-733,738
+src/onero_h1_lerobot/teleoperator.py
+  h_88c7cc6e5eb614 38,47-59,108-111,131-132,215-232,422-445,452-453,514-533
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.20",
+  "base_commit_sha": "c47e7112f10b2a2ed041953971e959ebc3520d2e",
+  "prompts": {},
+  "humans": {
+    "h_88c7cc6e5eb614": {
+      "author": "denglanjin <denglanjin@example.com>"
+    }
+  }
+}
