@@ -20,20 +20,23 @@ classifiers = [
   "License :: OSI Approved :: Apache Software License",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3.10",
-  "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
   "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 dependencies = [
-  "numpy>=1.24",
+  "numpy>=1.24,<2.3",
 ]
 
 [project.optional-dependencies]
-camera = ["opencv-python>=4.6"]
-lerobot = ["lerobot"]
+camera = ["opencv-python-headless>=4.9,<4.14"]
+# LeRobot 0.6.1 is the latest non-prerelease release verified on both
+# PyPI and GitHub. Keep this exact pin: this adapter imports LeRobot APIs
+# whose module paths and dataset contracts can change between releases.
+lerobot = ["lerobot[training,hardware,dataset-viz]==0.6.1; python_version >= '3.12'"]
 dev = [
-  "pytest>=8",
-  "ruff>=0.6",
+  "pytest>=8,<10",
+  "ruff>=0.14,<0.15",
 ]
 
 [project.scripts]
@@ -42,6 +45,7 @@ onero-h1-record-episode = "onero_h1_lerobot.cli.record_episode:main"
 onero-h1-replay-episode = "onero_h1_lerobot.cli.replay_episode:main"
 onero-h1-safe-test-action = "onero_h1_lerobot.cli.safe_test_action:main"
 onero-h1-lerobot-record = "onero_h1_lerobot.cli.lerobot_record:main"
+onero-h1-lerobot-rollout = "onero_h1_lerobot.cli.lerobot_rollout:main"
 onero-h1-lerobot-teleoperate = "onero_h1_lerobot.cli.lerobot_teleoperate:main"
 
 [tool.hatch.build.targets.wheel]

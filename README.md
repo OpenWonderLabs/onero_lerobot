@@ -59,6 +59,8 @@ Not included in the first version: MoveP/MoveL, MoveIt2 action clients, Nav2 goa
 
 ## Install
 
+This adapter is pinned to **LeRobot 0.6.1**, the latest stable non-prerelease release verified on PyPI and GitHub. It requires Python 3.12 or newer.
+
 On the robot or ROS2 workstation:
 
 ```bash
@@ -182,7 +184,7 @@ The replay reads actions from the dataset and sends them to the robot via `send_
 Inspect the dataset frames offline with LeRobot's built-in viewer:
 
 ```bash
-# Requires: pip install 'lerobot[dataset_viz]' --break-system-packages
+# Uses the pinned release: pip install 'lerobot[dataset-viz]==0.6.1' --break-system-packages
 ```
 
 **Option 1: Local (Recommended)** — Run directly on the robot's computer with a desktop:
@@ -262,31 +264,48 @@ If your LeRobot version does not auto-load third-party plugins, use the wrapper 
 ```bash
 onero-h1-lerobot-teleoperate --robot.type=onero_h1 --teleop.type=onero_h1_ros_joint ...
 onero-h1-lerobot-record --robot.type=onero_h1 --teleop.type=onero_h1_ros_joint ...
+onero-h1-lerobot-rollout --strategy.type=base --policy.path=/path/to/checkpoint --robot.type=onero_h1 ...
 ```
 
 The `onero_h1_ros_joint` teleoperator reads ROS2 `JointState` topics and outputs actions matching `OneroH1Robot.action_features`.
 
 ## Feature names
 
-Default action feature order:
+The default canonical policy action has exactly 16 values:
 
 ```text
 left_arm.joint1-l.pos ... left_arm.joint7-l.pos
-left_arm.joint1-l.vel ... left_arm.joint7-l.vel
 right_arm.joint1-r.pos ... right_arm.joint7-r.pos
-right_arm.joint1-r.vel ... right_arm.joint7-r.vel
 left_gripper.pos, right_gripper.pos
-lift.pos
 ```
 
-Observation features additionally include `.effort`, `.diff` (frame-to-frame position delta), and `.diff_pos` (gripper spatial deltas: x/y/z = raw position, pitch/roll/yaw = velocity).
+Robot and homogeneous teleoperator expose this exact order. Arm velocities and lift are explicit opt-in action channels (`use_arm_velocity_action=True`, `use_lift_action=True`) and should remain disabled for the first dataset. The default policy state has 17 scalars (14 arm positions + 2 grippers + lift), matching LeRobot rollout's hardware feature filter. Effort, diff, gripper-pose, and base observations are opt-in and must be configured identically during training and deployment.
+
+### Policy rollout
+
+Install the PyTorch build appropriate for the target platform by following the official PyTorch or hardware-vendor instructions, then install this package with its pinned LeRobot dependency. The repository does not bundle platform-specific CUDA wheels or modify LeRobot sources.
+
+Source the local ROS2 environment and run the policy through the native LeRobot rollout path:
+
+```bash
+source /opt/ros/${ROS_DISTRO}/setup.bash
+
+onero-h1-lerobot-rollout \
+  --strategy.type=base \
+  --policy.path=/path/to/checkpoint \
+  --robot.type=onero_h1 \
+  --robot.id=h1 \
+  --device=<cpu-or-cuda>
+```
+
+The adapter calls `rclpy` directly in the same Python environment. Training and deployment must use matching observation and action schemas.
 
 When `--send-hold-action` is enabled, control commands are published to:
 
 | Module | Topic | Type | Description |
 |--------|-------|------|-------------|
 | Arm | `/record_data` | `Float64MultiArray` | 28 floats (left7 pos + left7 vel + right7 pos + right7 vel) |
-| Gripper | `/joystick_info` | `Int32` | left=`int(pos*100+100)`, right=`int(pos*200+200)` (heterogeneous/vr only) |
+| Gripper | `/joystick_info` | `Int32` | left=`int(pos*100+100)`, right=`int(pos*100+200)` (heterogeneous/vr only) |
 | Lift | `/lift/joint_states/update` | `JointState` | when enabled |
 | Head | `/head/joint_states/update` | `JointState` | when enabled |
 | Base | `/cmd_vel` | `Twist` | when enabled |

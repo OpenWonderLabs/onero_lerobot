@@ -41,8 +41,9 @@ class OneroH1RosJointTeleopConfig(TeleoperatorConfig):
 
     use_left_arm: bool = True
     use_right_arm: bool = True
-    use_arm_velocity_action: bool = True
-    use_lift: bool = True
+    # Keep the default identical to OneroH1Robot's canonical policy schema.
+    use_arm_velocity_action: bool = False
+    use_lift: bool = False
     use_head: bool = False
     use_base_velocity_action: bool = False
 

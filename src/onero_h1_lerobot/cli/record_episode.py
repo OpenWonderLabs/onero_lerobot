@@ -113,7 +113,11 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Publish the current state as a hold action at every frame. Off by default for safety.",
     )
-    parser.add_argument("--finalize", action="store_true", help="Call dataset.finalize() after saving")
+    parser.add_argument(
+        "--finalize",
+        action="store_true",
+        help="Deprecated compatibility flag; LeRobot 0.6.1 datasets are always finalized after saving.",
+    )
     parser.add_argument(
         "--action-left-arm-topic",
         default=None,
@@ -234,17 +238,40 @@ def main() -> None:
     if _os.path.exists(dataset_root):
         _logger.info("Dataset already exists, checking feature compatibility...")
         existing = LeRobotDataset.resume(args.repo_id, root=str(dataset_root))
-        new_keys = set(dataset_features.keys())
-        existing_keys = set(existing.features.keys())
+
+        # LeRobot 0.6.1 adds bookkeeping fields such as timestamp/index to
+        # ``existing.features``. Compare only non-default dataset fields, and
+        # validate their semantic signature rather than keys alone.
+        from lerobot.utils.constants import DEFAULT_FEATURES
+
+        default_keys = set(DEFAULT_FEATURES)
+        new_keys = set(dataset_features)
+        existing_keys = set(existing.features) - default_keys
         missing = new_keys - existing_keys
         extra = existing_keys - new_keys
-        if missing or extra:
-            _logger.error(
-                "Feature mismatch with existing dataset:%s%s."
-                " Use a different --repo-id to avoid data corruption.",
-                f" missing={list(missing)}" if missing else "",
-                f" extra={list(extra)}" if extra else "",
+
+        def _feature_signature(feature: dict) -> tuple:
+            return (
+                feature.get("dtype"),
+                tuple(feature.get("shape", ())),
+                tuple(feature.get("names", ())),
             )
+
+        incompatible = sorted(
+            key
+            for key in new_keys & existing_keys
+            if _feature_signature(dataset_features[key])
+            != _feature_signature(existing.features[key])
+        )
+        if missing or extra or incompatible:
+            _logger.error(
+                "Feature mismatch with existing dataset:%s%s%s."
+                " Use a different --repo-id to avoid data corruption.",
+                f" missing={sorted(missing)}" if missing else "",
+                f" extra={sorted(extra)}" if extra else "",
+                f" incompatible={incompatible}" if incompatible else "",
+            )
+            existing.finalize()
             raise SystemExit(1)
         dataset = existing
     else:
@@ -361,9 +388,10 @@ def main() -> None:
     _logger.info("Saving episode to %s (%d frames)...", args.repo_id, i)
 
     dataset.save_episode()
-    if args.finalize and hasattr(dataset, "finalize"):
-        dataset.finalize()
-    _logger.info("Episode saved successfully")
+    # LeRobot 0.6.1 requires finalize() to flush writer/parquet metadata. A
+    # finalized dataset remains appendable in a later process via resume().
+    dataset.finalize()
+    _logger.info("Episode saved and finalized successfully")
     print("Done.")
 
 

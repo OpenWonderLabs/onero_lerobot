@@ -1,0 +1,5 @@
+# Preserve the vendor-exported MJCF bytes exactly; the file contains CRLF and
+# trailing whitespace that are significant for provenance checks.
+urdf/urdf/X1_URDF_V1_2.csv -diff
+urdf/urdf/X1_URDF_V1_2.urdf -diff
+urdf/urdf/X1_mjcf.urdf -diff

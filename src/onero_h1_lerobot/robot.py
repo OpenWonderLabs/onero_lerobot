@@ -71,7 +71,9 @@ class OneroH1Robot(Robot):
             names.extend(f"right_arm.{joint}.pos" for joint in self.config.right_arm_joint_names)
             if self.config.use_arm_velocity_action:
                 names.extend(f"right_arm.{joint}.vel" for joint in self.config.right_arm_joint_names)
-        if self.config.use_lift:
+        if self.config.use_gripper:
+            names.extend(["left_gripper.pos", "right_gripper.pos"])
+        if self.config.use_lift and self.config.use_lift_action:
             names.append("lift.pos")
         if self.config.use_head:
             names.extend(["head.pitch.pos", "head.yaw.pos"])
@@ -390,7 +392,10 @@ class OneroH1Robot(Robot):
             return True
 
         min_delta = max(0.0, float(self.config.arm_movej_min_delta_rad))
-        max_delta = max(abs(float(new) - float(old)) for new, old in zip(positions, last_positions))
+        max_delta = max(
+            abs(float(new) - float(old))
+            for new, old in zip(positions, last_positions, strict=True)
+        )
         if max_delta < min_delta:
             return False
 
@@ -418,7 +423,10 @@ class OneroH1Robot(Robot):
 
         dt = max(now - last_time, 1e-3)
         max_vel = max(0.0, float(self.config.record_data_max_velocity_radps))
-        velocities = [(float(new) - float(old)) / dt for new, old in zip(positions, last_positions)]
+        velocities = [
+            (float(new) - float(old)) / dt
+            for new, old in zip(positions, last_positions, strict=True)
+        ]
         if max_vel > 0.0:
             velocities = [min(max(v, -max_vel), max_vel) for v in velocities]
 
@@ -426,7 +434,7 @@ class OneroH1Robot(Robot):
         if last_velocities is not None and len(last_velocities) == len(velocities):
             velocities = [
                 alpha * float(new) + (1.0 - alpha) * float(old)
-                for new, old in zip(velocities, last_velocities)
+                for new, old in zip(velocities, last_velocities, strict=True)
             ]
 
         self._last_record_data_velocities[side] = velocities

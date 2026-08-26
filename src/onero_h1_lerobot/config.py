@@ -60,10 +60,15 @@ class OneroH1Config(RobotConfig):
     # Robot modules included in observations/actions
     use_left_arm: bool = True
     use_right_arm: bool = True
-    use_arm_velocity_action: bool = True
+    # Canonical v1 policy action schema: 14 arm positions + 2 grippers.
+    # Velocities and lift remain available as explicit opt-in action channels.
+    use_arm_velocity_action: bool = False
     use_lift: bool = True
+    use_lift_action: bool = False
     use_head: bool = False
-    use_base_observation: bool = True
+    # Keep the default policy-facing state compatible with LeRobot rollout:
+    # 14 arm positions + 2 grippers + lift = 17 scalar values.
+    use_base_observation: bool = False
     use_base_velocity_action: bool = False
     use_battery_observation: bool = False
     use_bumper_observation: bool = False
@@ -80,15 +85,15 @@ class OneroH1Config(RobotConfig):
 
     # Gripper pose (observation) — from /left_pose, /right_pose (PoseWithCovarianceStamped)
     # Used for computing .diff_pos (spatial delta between frames)
-    use_gripper_pose: bool = True
+    use_gripper_pose: bool = False
     left_gripper_pose_topic: str = "/left_pose"
     right_gripper_pose_topic: str = "/right_pose"
 
     # Effort (observation) — read from /left_joint_states, /right_joint_states effort field
-    use_arm_effort: bool = True
+    use_arm_effort: bool = False
 
     # Observation diff (computed locally) — frame-to-frame joint position delta
-    use_observation_diff: bool = True
+    use_observation_diff: bool = False
 
     # Action diff (computed locally) — frame-to-frame action position delta
     use_action_diff: bool = True

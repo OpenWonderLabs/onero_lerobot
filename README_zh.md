@@ -42,8 +42,8 @@ bash scripts/viz.sh --repo-id my/test --episode 0
 
 | 类别 | 话题来源 | 特征 |
 |------|---------|------|
-| 关节位置 `.pos` | 可配置，默认见 `--teleop-type`（homogeneous=`/left/joint_states` 等） | 双臂 14 关节 + 升降 |
-| 关节速度 `.vel` | 同上（从 JointState.velocity 字段读取或本地估算） | 双臂 14 关节 |
+| 关节位置 `.pos` | 可配置，默认见 `--teleop-type`（homogeneous=`/left/joint_states` 等） | 双臂 14 关节；升降可选 |
+| 关节速度 `.vel` | 同上（从 JointState.velocity 字段读取或本地估算） | 双臂 14 关节，可选，默认关闭 |
 | 帧间差 `.diff` | 本地计算 | 双臂 14 关节 + 夹爪 + 升降 |
 | 夹爪 | `/joystick_info`（Int32）或 VR 独立 Float32 话题 | left_gripper.pos, right_gripper.pos |
 
@@ -84,7 +84,7 @@ onero-h1-record-episode \
 ### 前置条件
 
 - Ubuntu 24.04 + ROS2 Jazzy
-- Python 3.10+
+- Python 3.12+（LeRobot 0.6.1 要求）
 - H1 机器人 SDK 已安装并 source
 
 ### 下载并解压
@@ -99,7 +99,7 @@ cd ~/oneroh1lerobot
 ### 自动安装（推荐）
 
 ```bash
-cd /home/denglanjin/vr/oneroh1lerobot
+cd ~/oneroh1lerobot
 sudo bash scripts/setup.sh
 ```
 
@@ -109,12 +109,14 @@ sudo bash scripts/setup.sh
 # 1. 加载 ROS2 环境
 source /opt/ros/jazzy/setup.bash
 
-# 2. 安装 LeRobot（GitHub 源）
-python3 -m pip install "git+https://github.com/huggingface/lerobot.git" --break-system-packages
+# 2. 安装固定的 LeRobot 稳定版本（训练、硬件、数据集可视化依赖）
+python3 -m pip install \
+  'lerobot[training,hardware,dataset-viz]==0.6.1' \
+  --break-system-packages
 
-# 3. 安装 oneroh1lerobot + OpenCV
+# 3. 安装 oneroh1lerobot
 cd ~/oneroh1lerobot
-python3 -m pip install -e '.[camera]' --break-system-packages
+python3 -m pip install -e . --break-system-packages
 ```
 
 ### 验证安装
@@ -198,7 +200,7 @@ bash scripts/replay.sh --repo-id my/test --episode 0
 离线查看数据集中的每一帧数据，用于人工检查数据质量：
 
 ```bash
-# 需要先安装 viz 依赖: pip install 'lerobot[dataset_viz]' --break-system-packages
+# 使用项目固定版本：pip install 'lerobot[dataset-viz]==0.6.1' --break-system-packages
 ```
 
 **方式一：本地直接使用（推荐）** — 在机器人自带电脑上（有桌面环境）直接运行：
@@ -280,22 +282,41 @@ lerobot-record \
 ```bash
 onero-h1-lerobot-teleoperate --robot.type=onero_h1 --teleop.type=onero_h1_ros_joint ...
 onero-h1-lerobot-record --robot.type=onero_h1 --teleop.type=onero_h1_ros_joint ...
+onero-h1-lerobot-rollout --strategy.type=base --policy.path=/path/to/checkpoint --robot.type=onero_h1 ...
 ```
 
 ## 特征名称
 
-默认动作特征顺序：
+默认 canonical policy action 固定为 16 维：
 
 ```text
 left_arm.joint1-l.pos ... left_arm.joint7-l.pos
-left_arm.joint1-l.vel ... left_arm.joint7-l.vel
 right_arm.joint1-r.pos ... right_arm.joint7-r.pos
-right_arm.joint1-r.vel ... right_arm.joint7-r.vel
 left_gripper.pos, right_gripper.pos
-lift.pos
 ```
 
-观测特征额外包含 `.effort`、`.diff`、`.diff_pos` 等。
+Robot 与同构 Teleoperator 使用完全相同的顺序。速度动作和升降动作必须分别通过
+`use_arm_velocity_action=True`、`use_lift_action=True` 显式开启；第一版训练数据不要开启。
+默认 policy state 为 17 维（双臂位置 14 + 夹爪 2 + 升降 1），与 LeRobot rollout 的硬件特征筛选一致。`.effort`、`.diff`、`.diff_pos` 和底盘观测均可显式开启，但开启后训练与部署必须使用相同配置。
+
+### 策略部署
+
+请按照 PyTorch 官方文档或目标硬件厂商文档安装适合当前平台的 PyTorch，再安装本项目固定的 LeRobot 依赖。本仓库不捆绑特定平台的 CUDA wheel，也不修改 LeRobot 源码。
+
+加载本机 ROS2 环境后，通过 LeRobot 原生 rollout 路径运行策略：
+
+```bash
+source /opt/ros/${ROS_DISTRO}/setup.bash
+
+onero-h1-lerobot-rollout \
+  --strategy.type=base \
+  --policy.path=/path/to/checkpoint \
+  --robot.type=onero_h1 \
+  --robot.id=h1 \
+  --device=<cpu-or-cuda>
+```
+
+适配器在同一 Python 环境中直接调用 `rclpy`。训练和部署必须使用一致的 observation 与 action schema。
 
 当 `--send-hold-action` 开启时，控制指令通过以下话题发布（homogeneous 模式不发布夹爪）：
 

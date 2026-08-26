@@ -6,9 +6,9 @@
 
 | 脚本 | CLI 命令 | 作用 | 需要机器人 |
 |------|---------|------|:---:|
-| [record.sh](file:///home/denglanjin/vr/oneroh1lerobot/scripts/record.sh) | `onero-h1-record-episode` | 录制遥操作数据 | ✅ |
-| [replay.sh](file:///home/denglanjin/vr/oneroh1lerobot/scripts/replay.sh) | `onero-h1-replay-episode` | 回放数据到机器人 | ✅ |
-| [viz.sh](file:///home/denglanjin/vr/oneroh1lerobot/scripts/viz.sh) | `lerobot-dataset-viz` | 离线可视化查看数据 | ❌ |
+| [record.sh](../scripts/record.sh) | `onero-h1-record-episode` | 录制遥操作数据 | ✅ |
+| [replay.sh](../scripts/replay.sh) | `onero-h1-replay-episode` | 回放数据到机器人 | ✅ |
+| [viz.sh](../scripts/viz.sh) | `lerobot-dataset-viz` | 离线可视化查看数据 | ❌ |
 
 ```bash
 # 录制
@@ -62,7 +62,7 @@ bash scripts/viz.sh --repo-id my/test --episode 0
 ### 前置条件
 
 - Ubuntu 24.04 + ROS2 Jazzy
-- Python 3.10+
+- Python 3.12+（LeRobot 0.6.1 要求）
 - H1 机器人 SDK 已安装并 source
 
 ### 下载并解压
@@ -147,7 +147,7 @@ onero-h1-record-episode \
 | `--root` | str | `~/lerobot_datasets` | 数据集本地存储根目录。数据集以 `<repo_id>_<task>` 为子目录名保存 |
 | `--id` | str | `onero_h1` | 机器人 ID |
 | `--send-hold-action` | flag | - | 向机器人发布控制指令。开启后将创建所有 ROS publisher 并下发控制命令（详见下方"控制指令"章节） |
-| `--finalize` | flag | - | 录制完成后锁定数据集 |
+| `--finalize` | flag | - | 兼容参数；LeRobot 0.6.1 会始终 finalize，之后仍可通过 resume 追加 |
 | `--stop-topic` | str | `/stop_recording` | 柔和停止录制的 ROS2 Bool 话题（发布 `true` 在当前帧完成后退出，避免截断图片） |
 
 ### Action 输入话题（Teleoperator 订阅）
@@ -279,7 +279,7 @@ onero-h1-replay-episode --repo-id my/test --episode 0
 ### 安装依赖
 
 ```bash
-pip install 'lerobot[dataset_viz]' --break-system-packages
+pip install 'lerobot[dataset-viz]==0.6.1' --break-system-packages
 ```
 
 ### 方式一：本地直接使用（推荐）
@@ -298,11 +298,11 @@ bash scripts/viz.sh --repo-id my/test --episode 0
 bash scripts/viz.sh --repo-id my/test --episode 0 --mode distant
 ```
 
-然后在本地电脑上安装 rerun 并连接（替换 `10.8.69.50` 为机器人实际 IP）：
+然后在本地电脑上安装 rerun 并连接（将 `<robot-host>` 替换为机器人主机名或 IP）：
 
 ```bash
 pip install rerun-sdk
-rerun --connect rerun+http://10.8.69.50:9876/proxy
+rerun --connect rerun+http://<robot-host>:9876/proxy
 ```
 
 ### 方式三：保存为文件
@@ -314,7 +314,7 @@ rerun --connect rerun+http://10.8.69.50:9876/proxy
 bash scripts/viz.sh --repo-id my/test --episode 0 --save 1 --output-dir ./output
 
 # 传到本地电脑
-scp -r wlab@10.8.69.50:~/oneroh1lerobot/output ./output
+scp -r <robot-user>@<robot-host>:~/oneroh1lerobot/output ./output
 
 # 本地电脑上查看
 pip install rerun-sdk
@@ -447,7 +447,7 @@ onero-h1-replay-episode --repo-id my/test --episode 0
 **Q: 如何离线查看数据集而不用连接机器人？**
 
 ```bash
-pip install 'lerobot[dataset_viz]' --break-system-packages
+pip install 'lerobot[dataset-viz]==0.6.1' --break-system-packages
 bash scripts/viz.sh --repo-id my/test --episode 0
 ```
 

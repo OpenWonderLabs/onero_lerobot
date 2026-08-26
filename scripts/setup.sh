@@ -19,20 +19,25 @@ fi
 if [ -n "${SUDO_USER:-}" ]; then
     REAL_USER="$SUDO_USER"
     REAL_HOME=$(eval echo "~$REAL_USER")
-    PIP_CMD="sudo -u $REAL_USER python3 -m pip"
+    PYTHON_CMD="sudo -u $REAL_USER python3"
+    PIP_CMD="$PYTHON_CMD -m pip"
 else
     REAL_USER="$(whoami)"
     REAL_HOME="$HOME"
-    PIP_CMD="python3 -m pip"
+    PYTHON_CMD="python3"
+    PIP_CMD="$PYTHON_CMD -m pip"
 fi
+
+LEROBOT_VERSION="0.6.1"
 
 echo "============================================"
 echo "  oneroh1lerobot 环境搭建"
+echo "  LeRobot ${LEROBOT_VERSION}"
 echo "============================================"
 echo ""
 
 # --- 1. 检查 ROS2 环境 ---
-echo "[1/3] 检查 ROS2 环境..."
+echo "[1/4] 检查 ROS2 环境..."
 
 if [ -z "${ROS_DISTRO:-}" ]; then
     if [ -f /opt/ros/jazzy/setup.bash ]; then
@@ -52,10 +57,14 @@ echo "  ROS_VERSION=${ROS_VERSION:-unknown}"
 
 # --- 2. 检查 Python ---
 echo ""
-echo "[2/3] 检查 Python..."
+echo "[2/4] 检查 Python..."
 
 PYTHON_VERSION=$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")' 2>/dev/null || echo "unknown")
 echo "  Python ${PYTHON_VERSION}"
+python3 -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 12) else 1)' || {
+    echo "  [错误] LeRobot ${LEROBOT_VERSION} 要求 Python >= 3.12"
+    exit 1
+}
 
 # --- 3. 安装系统依赖 ---
 echo ""
@@ -93,33 +102,16 @@ $PIP_CMD uninstall -y torch torchvision numpy opencv-python-headless cmake packa
 echo "  安装 PyTorch（CPU-only）..."
 $PIP_CMD install "torch<2.12,>=2.7" "torchvision<0.27,>=0.22" --index-url https://download.pytorch.org/whl/cpu $PIP_OPTS
 
-# LeRobot（--no-deps 防止覆盖 CPU torch）
-echo "  安装 LeRobot..."
-$PIP_CMD install "git+https://github.com/huggingface/lerobot.git" --no-deps $PIP_OPTS
-
-# LeRobot 其余依赖
-echo "  安装 LeRobot 其余依赖..."
+# 安装固定版本及官方声明的训练、硬件和数据集可视化依赖。
+# PyTorch 已在上一步固定为 CPU wheel，且满足 LeRobot 的版本范围，pip 不会替换它。
+echo "  安装 LeRobot ${LEROBOT_VERSION}..."
 $PIP_CMD install \
-    "numpy<2.3,>=2.0" \
-    "opencv-python-headless<4.14,>=4.9" \
-    "cmake<4.2,>=3.29" \
-    "packaging<26,>=24.2" \
-    "setuptools<82,>=71" \
-    "draccus<0.12,>=0.11.6" \
-    "einops<0.9,>=0.8" \
-    "gymnasium<2.0,>=1.1" \
-    "huggingface-hub<2.0,>=1.6" \
-    "requests<3.0,>=2.32" \
-    Pillow safetensors termcolor tqdm \
+    "lerobot[training,hardware,dataset-viz]==${LEROBOT_VERSION}" \
     $PIP_OPTS
 
-# oneroh1lerobot + OpenCV
-echo "  安装 oneroh1lerobot + OpenCV..."
-$PIP_CMD install -e '.[camera]' $PIP_OPTS
-
-# 可视化依赖（Rerun + Foxglove，用于 lerobot-dataset-viz）
-echo "  安装可视化依赖（Rerun）..."
-$PIP_CMD install "rerun-sdk>=0.24.0,<0.34.0" "foxglove-sdk>=0.25.1,<0.26.0" $PIP_OPTS
+# oneroh1lerobot。LeRobot 已提供兼容版本的 opencv-python-headless。
+echo "  安装 oneroh1lerobot..."
+$PIP_CMD install -e . $PIP_OPTS
 
 echo "  全部依赖安装完成"
 
@@ -129,10 +121,11 @@ echo "============================================"
 echo "  验证安装"
 echo "============================================"
 
-if $PIP_CMD show lerobot &>/dev/null; then
-    echo "  LeRobot: OK"
+INSTALLED_LEROBOT_VERSION=$($PYTHON_CMD -c 'import importlib.metadata; print(importlib.metadata.version("lerobot"))' 2>/dev/null || true)
+if [ "$INSTALLED_LEROBOT_VERSION" = "$LEROBOT_VERSION" ]; then
+    echo "  LeRobot ${INSTALLED_LEROBOT_VERSION}: OK"
 else
-    echo "  [错误] LeRobot 安装失败"
+    echo "  [错误] LeRobot 版本不匹配：期望 ${LEROBOT_VERSION}，实际 ${INSTALLED_LEROBOT_VERSION:-未安装}"
     exit 1
 fi
 
@@ -143,14 +136,14 @@ else
     exit 1
 fi
 
-if python3 -c "import cv2; print(f'  OpenCV {cv2.__version__}: OK')" 2>/dev/null; then
+if $PYTHON_CMD -c "import cv2; print(f'  OpenCV {cv2.__version__}: OK')" 2>/dev/null; then
     :
 else
     echo "  [错误] OpenCV 导入失败"
     exit 1
 fi
 
-if python3 -c "import rerun_sdk" 2>/dev/null; then
+if $PYTHON_CMD -c "import rerun_sdk" 2>/dev/null; then
     echo "  Rerun (可视化): OK"
 else
     echo "  [警告] Rerun 可视化依赖安装失败，可视化功能不可用"

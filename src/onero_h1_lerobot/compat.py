@@ -15,14 +15,22 @@ try:  # pragma: no cover - depends on the user's LeRobot installation
     from lerobot.robots.robot import Robot
     from lerobot.teleoperators.config import TeleoperatorConfig
     from lerobot.teleoperators.teleoperator import Teleoperator
-    from lerobot.types import RobotAction, RobotObservation
+
+    # LeRobot renamed ``lerobot.types`` to ``lerobot.lerobot_types`` in 0.6.1.
+    # The project pins 0.6.1, while the fallback keeps older developer
+    # environments importable long enough to report a useful compatibility error.
+    try:
+        from lerobot.lerobot_types import RobotAction, RobotObservation
+    except ImportError:  # pragma: no cover - compatibility with LeRobot <= 0.6.0
+        from lerobot.types import RobotAction, RobotObservation
 
     LEROBOT_AVAILABLE = True
 except Exception:  # pragma: no cover - exercised when LeRobot is not installed
     LEROBOT_AVAILABLE = False
 
-    RobotAction: TypeAlias = dict[str, Any]
-    RobotObservation: TypeAlias = dict[str, Any]
+    # Keep assignment syntax for Python 3.10 compatibility.
+    RobotAction: TypeAlias = dict[str, Any]  # noqa: UP040
+    RobotObservation: TypeAlias = dict[str, Any]  # noqa: UP040
 
     @dataclass(kw_only=True)
     class RobotConfig:

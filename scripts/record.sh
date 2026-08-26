@@ -30,7 +30,7 @@ usage() {
     echo "  --action-right-gripper-topic 右夹爪 topic（覆盖默认值，float32/VR 模式）"
     echo "  --gripper-type             夹爪消息格式: int32 | float32（脚本自动设置）"
     echo "  --send-hold-action        向机器人发布控制指令（默认不发布）"
-    echo "  --finalize                录制完成后锁定数据集"
+    echo "  --finalize                兼容参数；LeRobot 0.6.1 会始终 finalize 数据集"
     echo ""
     echo "示例:"
     echo "  # 主从同构遥操，录制 60 秒"
