@@ -1,0 +1,68 @@
+src/onero_h1_lerobot/config.py
+  s_4b2453d51a6d62::t_602b3be702f56b 63-65,67,69-71,88,93,96
+tests/test_action_schema.py
+  s_4b2453d51a6d62::t_3bf14d31a20a58 1-41
+.gitignore
+  s_4b2453d51a6d62::t_c32cf4e4b49624 6-21
+  s_4b2453d51a6d62::t_fccb6143a1d478 1-5
+scripts/setup_mujoco_uv.sh
+  s_4b2453d51a6d62::t_519ea4b43432af 24-25,27
+  s_4b2453d51a6d62::t_42887af6e0378b 1-23,26,28-41
+src/onero_h1_lerobot/robot.py
+  s_4b2453d51a6d62::t_dd8335353ccabb 74-76,395-398,426-429,437
+README.md
+  s_4b2453d51a6d62::t_f9d79c40d650f9 62-63,187,267,274,282-283,285,287,290,292-297,299-300,308
+  s_4b2453d51a6d62::t_a82fe763f1b003 284,286,288-289,291,298,301
+README_zh.md
+  s_4b2453d51a6d62::t_4cc71b0b94836f 45-46,87,112-115,117,119,203,285,290,298-301,303,305,307-308,311-315,317-318
+  s_4b2453d51a6d62::t_8fe74968e02e56 102,302,304,306,309-310,316,319
+scripts/sim_h1.sh
+  s_4b2453d51a6d62::t_6c10bb51547671 1-25
+urdf/README.md
+  s_4b2453d51a6d62::t_44dbea6f4147b7 1-41
+scripts/setup.sh
+  s_4b2453d51a6d62::t_e4dd8bd4b5a70f 22-23,27-28,31-32,35,40,60,64-67,105-107,109,112-114,124-126,128,139,146
+scripts/start_mujoco_viewer.sh
+  s_4b2453d51a6d62::t_cba81e500bd4eb 1-29
+urdf/urdf/X1_mjcf_with_grippers.urdf
+  s_4b2453d51a6d62::t_0e5a2f9968ed27 1-1024
+src/onero_h1_lerobot/teleoperator.py
+  s_4b2453d51a6d62::t_3fd76bb858d80a 44-46
+src/onero_h1_lerobot/cli/record_episode.py
+  s_4b2453d51a6d62::t_df94360c0ff0ec 116-120,241-249,252-266,268,270-272,274,391-394
+src/onero_h1_lerobot/cli/lerobot_rollout.py
+  s_4b2453d51a6d62::t_8ad04f23a2452c 1-22
+docs/usage_passive_recording.md
+  s_4b2453d51a6d62::t_fbbe8123790a9a 65,150,282,450
+  s_4b2453d51a6d62::t_41b8ee7195d2cc 9-11,301,305,317
+src/onero_h1_lerobot/compat.py
+  s_4b2453d51a6d62::t_8999046a2939ad 18-25,31-33
+pyproject.toml
+  s_4b2453d51a6d62::t_4417efb81c6de1 24,28,32-36,38-39,48
+scripts/deploy_mujoco_smoke.py
+  s_4b2453d51a6d62::t_710e7cce9f9d6c 1-73
+scripts/h1_topic_sim.py
+  s_4b2453d51a6d62::t_e38786cf32f410 1-483
+scripts/record.sh
+  s_4b2453d51a6d62::t_08b15c5773e1dc 33
+.gitattributes
+  s_4b2453d51a6d62::t_1f908fc8b297e4 1-2,5
+  s_4b2453d51a6d62::t_45447b2a0d1a0d 3
+  s_4b2453d51a6d62::t_ce51fda8538dc2 4
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "2bfe84309c86c9325128c66c321a4fdb2058ea12",
+  "prompts": {},
+  "sessions": {
+    "s_4b2453d51a6d62": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a036d7-1d55-75ba-aae4-dbfbc1ab8d3c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": null
+    }
+  }
+}
