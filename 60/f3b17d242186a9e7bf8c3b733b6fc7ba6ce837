@@ -1,0 +1,19 @@
+onero_h1_lerobot/scripts/h1_topic_sim.py
+  s_4b2453d51a6d62::t_1902d90a11a37e 60-63
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.24",
+  "base_commit_sha": "60f3b17d242186a9e7bf8c3b733b6fc7ba6ce837",
+  "prompts": {},
+  "sessions": {
+    "s_4b2453d51a6d62": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a036d7-1d55-75ba-aae4-dbfbc1ab8d3c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Albert Lv <lvwenyi@onerobot.com>"
+    }
+  }
+}
