@@ -285,6 +285,20 @@ Robot and homogeneous teleoperator expose this exact order. Arm velocities and l
 
 Install the PyTorch build appropriate for the target platform by following the official PyTorch or hardware-vendor instructions, then install this package with its pinned LeRobot dependency. The repository does not bundle platform-specific CUDA wheels or modify LeRobot sources.
 
+For Ubuntu 24.04, ROS2 Jazzy, and an RTX 50-series GPU, use the native installer after ROS2 Jazzy is installed:
+
+```bash
+bash scripts/setup_ubuntu24_native.sh
+```
+
+Run the complete MuJoCo recording, ACT GPU training, and checkpoint rollout validation:
+
+```bash
+bash scripts/run_sim_train_rollout.sh
+```
+
+Outputs are written to `~/onero_h1_runs/<timestamp>/` by default. Override settings with environment variables such as `H1_VALIDATION_ROOT`, `H1_TRAIN_STEPS`, and `H1_FPS`.
+
 Source the local ROS2 environment and run the policy through the native LeRobot rollout path:
 
 ```bash

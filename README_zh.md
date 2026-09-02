@@ -303,6 +303,20 @@ Robot 与同构 Teleoperator 使用完全相同的顺序。速度动作和升降
 
 请按照 PyTorch 官方文档或目标硬件厂商文档安装适合当前平台的 PyTorch，再安装本项目固定的 LeRobot 依赖。本仓库不捆绑特定平台的 CUDA wheel，也不修改 LeRobot 源码。
 
+Ubuntu 24.04 + ROS2 Jazzy + RTX 50 系列可使用原生安装脚本（需要先安装 ROS2 Jazzy）：
+
+```bash
+bash scripts/setup_ubuntu24_native.sh
+```
+
+完整验证 MuJoCo 仿真录制、ACT GPU 训练和 checkpoint rollout：
+
+```bash
+bash scripts/run_sim_train_rollout.sh
+```
+
+产物默认写入 `~/onero_h1_runs/<timestamp>/`，可通过 `H1_VALIDATION_ROOT`、`H1_TRAIN_STEPS`、`H1_FPS` 等环境变量覆盖。
+
 加载本机 ROS2 环境后，通过 LeRobot 原生 rollout 路径运行策略：
 
 ```bash
