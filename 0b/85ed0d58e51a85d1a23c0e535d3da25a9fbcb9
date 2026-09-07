@@ -1,0 +1,15 @@
+docs/usage_passive_recording.md
+  h_88c7cc6e5eb614 1,7-8,11-17,26,29-32,35,358-428,430,432,461,463,465-466,468-470,472-473,475,480,482-484,486,488-493,495-497,499-513,623-638,640-642,644-656,658-662
+  h_88c7cc6e5eb614 18-19,429,431,433-460,462,464,467,471,474,476-479,481,485,487,494,498,639,643,657
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.2",
+  "base_commit_sha": "0b85ed0d58e51a85d1a23c0e535d3da25a9fbcb9",
+  "prompts": {},
+  "humans": {
+    "h_88c7cc6e5eb614": {
+      "author": "denglanjin <denglanjin@example.com>"
+    }
+  }
+}
