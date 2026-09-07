@@ -1,0 +1,30 @@
+README.md
+  s_0081c983199946::t_07f9f533b9e1cf 288-301
+scripts/run_sim_train_rollout.sh
+  s_0081c983199946::t_fb944ab89352f5 25
+  s_0081c983199946::t_7dd3e0c7932187 50
+  s_0081c983199946::t_6265327490a71e 71
+  s_0081c983199946::t_33c817e3e3345f 7,28-35
+  s_0081c983199946::t_6906433479800b 1-6,8-24,26-27,36-49,51-70,72-115
+scripts/setup_ubuntu24_native.sh
+  s_0081c983199946::t_f9e3ee9435f1e4 1-31,33-52
+  s_0081c983199946::t_1dc0e5f064172c 32
+README_zh.md
+  s_0081c983199946::t_a7ea2a0972217a 306-319
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "bfdf212449fa5406a90450d86c768bc2a74b7352",
+  "prompts": {},
+  "sessions": {
+    "s_0081c983199946": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a0473d-aa18-7d46-8515-504ac38d7115",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Albert Lv <lvwenyi@onerobot.com>"
+    }
+  }
+}
