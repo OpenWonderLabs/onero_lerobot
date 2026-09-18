@@ -98,25 +98,39 @@ cd ~/oneroh1lerobot
 
 ### 自动安装（推荐）
 
+根据运行设备选择安装流程，不要混用脚本。
+
+#### NVIDIA Jetson Orin
+
 ```bash
 cd ~/oneroh1lerobot
-sudo bash scripts/setup.sh
+bash scripts/setup_orin_native.sh
 ```
 
-### 手动安装
+#### 普通 Ubuntu 24.04 电脑
+
+先安装数采、视频处理和数据集可视化基础环境：
 
 ```bash
-# 1. 加载 ROS2 环境
+bash scripts/setup.sh
+```
+
+如果还需要 MuJoCo、模型训练或 CUDA rollout，再执行第二阶段：
+
+```bash
+bash scripts/setup_ubuntu24_native.sh
+```
+
+两个脚本复用 `~/.venvs/h1-lerobot`，不要使用 `sudo` 启动整个安装脚本，也不要向系统 Python
+执行全局 pip 安装。
+
+### 加载环境
+
+每次新开终端后执行：
+
+```bash
 source /opt/ros/jazzy/setup.bash
-
-# 2. 安装固定的 LeRobot 稳定版本（训练、硬件、数据集可视化依赖）
-python3 -m pip install \
-  'lerobot[training,hardware,dataset-viz]==0.6.1' \
-  --break-system-packages
-
-# 3. 安装 oneroh1lerobot
-cd ~/oneroh1lerobot
-python3 -m pip install -e . --break-system-packages
+source ~/.venvs/h1-lerobot/bin/activate
 ```
 
 ### 验证安装
@@ -197,11 +211,8 @@ bash scripts/replay.sh --repo-id my/test --episode 0
 
 ## 可视化录制的 Episode
 
-离线查看数据集中的每一帧数据，用于人工检查数据质量：
-
-```bash
-# 使用项目固定版本：pip install 'lerobot[dataset-viz]==0.6.1' --break-system-packages
-```
+离线查看数据集中的每一帧数据，用于人工检查数据质量。推荐安装脚本已经把可视化依赖安装到
+项目虚拟环境中，无需向系统 Python 单独安装。
 
 **方式一：本地直接使用（推荐）** — 在机器人自带电脑上（有桌面环境）直接运行：
 
@@ -303,9 +314,10 @@ Robot 与同构 Teleoperator 使用完全相同的顺序。速度动作和升降
 
 请按照 PyTorch 官方文档或目标硬件厂商文档安装适合当前平台的 PyTorch，再安装本项目固定的 LeRobot 依赖。本仓库不捆绑特定平台的 CUDA wheel，也不修改 LeRobot 源码。
 
-Ubuntu 24.04 + ROS2 Jazzy + RTX 50 系列可使用原生安装脚本（需要先安装 ROS2 Jazzy）：
+Ubuntu 24.04 + ROS2 Jazzy + RTX 50 系列需要先安装基础环境，再补充 GPU、MuJoCo 和训练依赖：
 
 ```bash
+bash scripts/setup.sh
 bash scripts/setup_ubuntu24_native.sh
 ```
 

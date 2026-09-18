@@ -1,162 +1,156 @@
-#!/bin/bash
-# oneroh1lerobot 环境搭建脚本
-# 用法: sudo bash scripts/setup.sh
-#   sudo 仅用于 apt-get 安装系统依赖，pip 安装以原用户身份执行
+#!/usr/bin/env bash
+# Isolated base setup for data collection on a standard ROS2 computer.
+#
+# Usage:
+#   bash scripts/setup.sh
+#
+# Optional override:
+#   H1_LEROBOT_VENV=$HOME/.venvs/h1-lerobot
 
-set -eo pipefail
+set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
-
-if [[ "${1:-}" == "-h" ]] || [[ "${1:-}" == "--help" ]]; then
-    echo "用法: sudo bash scripts/setup.sh"
-    echo ""
-    echo "一键安装 oneroh1lerobot 及其所有依赖（LeRobot + OpenCV + 可视化 + 回放）"
-    exit 0
-fi
-
-# 检测是否以 sudo 运行，pip 需要以原用户身份执行
-if [ -n "${SUDO_USER:-}" ]; then
-    REAL_USER="$SUDO_USER"
-    REAL_HOME=$(eval echo "~$REAL_USER")
-    PYTHON_CMD="sudo -u $REAL_USER python3"
-    PIP_CMD="$PYTHON_CMD -m pip"
-else
-    REAL_USER="$(whoami)"
-    REAL_HOME="$HOME"
-    PYTHON_CMD="python3"
-    PIP_CMD="$PYTHON_CMD -m pip"
-fi
-
+VENV="${H1_LEROBOT_VENV:-$HOME/.venvs/h1-lerobot}"
 LEROBOT_VERSION="0.6.1"
+PIP_NETWORK_OPTS=(--timeout 120 --retries 3)
 
-echo "============================================"
-echo "  oneroh1lerobot 环境搭建"
-echo "  LeRobot ${LEROBOT_VERSION}"
-echo "============================================"
-echo ""
+usage() {
+    cat <<'EOF'
+用法: bash scripts/setup.sh
 
-# --- 1. 检查 ROS2 环境 ---
-echo "[1/4] 检查 ROS2 环境..."
+为普通 ROS2 电脑创建独立虚拟环境，并安装：
+  - CPU PyTorch
+  - LeRobot 0.6.1（训练、硬件和数据集可视化依赖）
+  - Onero H1 LeRobot 适配器
 
-if [ -z "${ROS_DISTRO:-}" ]; then
-    if [ -f /opt/ros/jazzy/setup.bash ]; then
-        echo "  加载 ROS2 Jazzy..."
-        source /opt/ros/jazzy/setup.bash
-    elif [ -f /opt/ros/humble/setup.bash ]; then
-        echo "  加载 ROS2 Humble..."
-        source /opt/ros/humble/setup.bash
-    else
-        echo "  [错误] 未找到 ROS2 安装，请先安装 ROS2 Jazzy 或 Humble"
-        exit 1
-    fi
-fi
+可选环境变量：
+  H1_LEROBOT_VENV   虚拟环境位置（默认 ~/.venvs/h1-lerobot）
 
-echo "  ROS_DISTRO=${ROS_DISTRO:-unknown}"
-echo "  ROS_VERSION=${ROS_VERSION:-unknown}"
+NVIDIA Jetson Orin 请改用 scripts/setup_orin_native.sh。
+普通电脑如需 MuJoCo、训练或 CUDA rollout，请在本脚本完成后继续运行：
+  bash scripts/setup_ubuntu24_native.sh
+EOF
+}
 
-# --- 2. 检查 Python ---
-echo ""
-echo "[2/4] 检查 Python..."
-
-PYTHON_VERSION=$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")' 2>/dev/null || echo "unknown")
-echo "  Python ${PYTHON_VERSION}"
-python3 -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 12) else 1)' || {
-    echo "  [错误] LeRobot ${LEROBOT_VERSION} 要求 Python >= 3.12"
+die() {
+    printf 'ERROR: %s\n' "$1" >&2
     exit 1
 }
 
-# --- 3. 安装系统依赖 ---
-echo ""
-echo "[3/4] 安装系统依赖..."
-
-# 修复 ubuntu-ports 误配问题（amd64 机器配了 ARM 镜像源会导致 404）
-ARCH=$(dpkg --print-architecture 2>/dev/null || echo "unknown")
-if [ "$ARCH" = "amd64" ]; then
-    for f in /etc/apt/sources.list /etc/apt/sources.list.d/*.sources /etc/apt/sources.list.d/*.list; do
-        if [ -f "$f" ] && grep -q "ubuntu-ports" "$f" 2>/dev/null; then
-            echo "  检测到 amd64 机器使用了 ubuntu-ports 源，自动修复: $f"
-            sed -i 's|ubuntu-ports|ubuntu|g' "$f"
-        fi
-    done
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+    usage
+    exit 0
 fi
 
-echo "  安装 FFmpeg..."
-apt-get update -qq
-apt-get install -y -qq ffmpeg libavcodec-dev libavformat-dev libavutil-dev libavdevice-dev
-echo "  FFmpeg 安装完成（torchcodec 硬解码）"
+[[ $# -eq 0 ]] || die "不支持参数：$*. 使用 --help 查看说明。"
 
-# --- 4. 安装 Python 依赖（以原用户身份） ---
-echo ""
-echo "[4/4] 安装 Python 依赖..."
+if [[ "${EUID}" -eq 0 ]]; then
+    die "不要使用 sudo 启动整个脚本。请运行：bash scripts/setup.sh"
+fi
 
-cd "$PROJECT_DIR"
+if [[ -r /etc/nv_tegra_release ]]; then
+    die "检测到 NVIDIA Jetson；请使用 bash scripts/setup_orin_native.sh"
+fi
 
-PIP_OPTS="--timeout 120 --retries 3 --break-system-packages"
+printf '============================================\n'
+printf '  Onero H1 LeRobot 隔离环境安装\n'
+printf '  LeRobot %s\n' "$LEROBOT_VERSION"
+printf '============================================\n\n'
 
-# 清理可能冲突的旧版本
-echo "  清理旧版本依赖..."
-$PIP_CMD uninstall -y torch torchvision numpy opencv-python-headless cmake packaging setuptools draccus einops gymnasium huggingface-hub requests lerobot 2>/dev/null || true
+printf '[1/5] 检查 ROS2 和 Python\n'
 
-# 安装 CPU-only torch
-echo "  安装 PyTorch（CPU-only）..."
-$PIP_CMD install "torch<2.12,>=2.7" "torchvision<0.27,>=0.22" --index-url https://download.pytorch.org/whl/cpu $PIP_OPTS
-
-# 安装固定版本及官方声明的训练、硬件和数据集可视化依赖。
-# PyTorch 已在上一步固定为 CPU wheel，且满足 LeRobot 的版本范围，pip 不会替换它。
-echo "  安装 LeRobot ${LEROBOT_VERSION}..."
-$PIP_CMD install \
-    "lerobot[training,hardware,dataset-viz]==${LEROBOT_VERSION}" \
-    $PIP_OPTS
-
-# oneroh1lerobot。LeRobot 已提供兼容版本的 opencv-python-headless。
-echo "  安装 oneroh1lerobot..."
-$PIP_CMD install -e . $PIP_OPTS
-
-echo "  全部依赖安装完成"
-
-# --- 验证 ---
-echo ""
-echo "============================================"
-echo "  验证安装"
-echo "============================================"
-
-INSTALLED_LEROBOT_VERSION=$($PYTHON_CMD -c 'import importlib.metadata; print(importlib.metadata.version("lerobot"))' 2>/dev/null || true)
-if [ "$INSTALLED_LEROBOT_VERSION" = "$LEROBOT_VERSION" ]; then
-    echo "  LeRobot ${INSTALLED_LEROBOT_VERSION}: OK"
+if [[ -f /opt/ros/jazzy/setup.bash ]]; then
+    ROS_SETUP=/opt/ros/jazzy/setup.bash
+elif [[ -f /opt/ros/humble/setup.bash ]]; then
+    ROS_SETUP=/opt/ros/humble/setup.bash
 else
-    echo "  [错误] LeRobot 版本不匹配：期望 ${LEROBOT_VERSION}，实际 ${INSTALLED_LEROBOT_VERSION:-未安装}"
-    exit 1
+    die "未找到 ROS2 Jazzy 或 Humble。"
 fi
 
-if $PIP_CMD show lerobot_robot_onero_h1 &>/dev/null; then
-    echo "  oneroh1lerobot: OK"
+python3 - <<'PY' || die "LeRobot 0.6.1 需要 Python >= 3.12。"
+import sys
+raise SystemExit(0 if sys.version_info >= (3, 12) else 1)
+PY
+
+printf '  ROS setup: %s\n' "$ROS_SETUP"
+printf '  Python: %s\n' "$(python3 --version 2>&1)"
+
+printf '\n[2/5] 安装最小系统依赖\n'
+sudo apt-get update
+sudo apt-get install -y --no-install-recommends \
+    python3-venv python3-pip \
+    ffmpeg libavcodec-dev libavformat-dev libavutil-dev libavdevice-dev
+
+printf '\n[3/5] 创建 Python 虚拟环境\n'
+if [[ ! -x "$VENV/bin/python" ]]; then
+    python3 -m venv --system-site-packages "$VENV"
 else
-    echo "  [错误] oneroh1lerobot 安装失败"
-    exit 1
+    printf '  复用已有虚拟环境：%s\n' "$VENV"
 fi
 
-if $PYTHON_CMD -c "import cv2; print(f'  OpenCV {cv2.__version__}: OK')" 2>/dev/null; then
-    :
-else
-    echo "  [错误] OpenCV 导入失败"
-    exit 1
-fi
+# ROS setup scripts may reference optional variables before defining them.
+set +u
+# shellcheck disable=SC1090
+source "$ROS_SETUP"
+set -u
+# shellcheck disable=SC1090
+source "$VENV/bin/activate"
 
-if $PYTHON_CMD -c "import rerun_sdk" 2>/dev/null; then
-    echo "  Rerun (可视化): OK"
-else
-    echo "  [警告] Rerun 可视化依赖安装失败，可视化功能不可用"
-fi
+python -m pip install "${PIP_NETWORK_OPTS[@]}" --upgrade \
+    pip 'setuptools>=71,<80' wheel 'packaging>=24.2,<26'
 
-echo ""
-echo "============================================"
-echo "  安装完成！"
-echo "============================================"
-echo ""
-echo "快速测试（需 ROS2 环境和机器人运行中）："
-echo "  onero-h1-print-observation --no-cameras --count 5"
-echo ""
-echo "录制数据："
-echo "  bash scripts/record.sh --repo-id my_name/test --task 'test' --teleop-type homogeneous"
-echo "  详细说明见 docs/usage_passive_recording.md"
+python -c 'import rclpy; print("  rclpy:", rclpy.__file__)' \
+    || die "虚拟环境无法导入 ROS2 rclpy。"
+
+printf '\n[4/5] 安装 Python 依赖\n'
+
+# Do not uninstall packages from the user or system Python environment. If this
+# venv already contains a compatible torch build, pip keeps it; otherwise the
+# standard setup installs the CPU wheel.
+python -m pip install "${PIP_NETWORK_OPTS[@]}" \
+    --index-url https://download.pytorch.org/whl/cpu \
+    'torch>=2.7,<2.12' 'torchvision>=0.22,<0.27'
+
+python -m pip install "${PIP_NETWORK_OPTS[@]}" \
+    "lerobot[training,hardware,dataset-viz]==${LEROBOT_VERSION}"
+
+python -m pip install "${PIP_NETWORK_OPTS[@]}" -e "$PROJECT_DIR"
+
+printf '\n[5/5] 验证安装\n'
+python - <<'PY'
+import importlib.metadata as metadata
+
+import cv2
+import rclpy
+import torch
+from lerobot.datasets.lerobot_dataset import LeRobotDataset
+
+from onero_h1_lerobot import OneroH1Config, OneroH1Robot
+
+robot = OneroH1Robot(OneroH1Config(id="setup-verification", use_cameras=False))
+assert metadata.version("lerobot") == "0.6.1"
+assert len(robot.action_features) == 16
+
+print("  LeRobot:", metadata.version("lerobot"))
+print("  Adapter:", metadata.version("lerobot_robot_onero_h1"))
+print("  PyTorch:", torch.__version__)
+print("  CUDA available:", torch.cuda.is_available())
+print("  OpenCV:", cv2.__version__)
+print("  rclpy:", rclpy.__file__)
+print("  LeRobotDataset:", LeRobotDataset.__module__)
+print("  Action schema: 16 dimensions")
+PY
+
+python -c 'import rerun_sdk; print("  Rerun: OK")' \
+    || die "Rerun 数据集可视化依赖无法导入。"
+
+printf '\n============================================\n'
+printf '  安装完成\n'
+printf '============================================\n'
+printf '虚拟环境：%s\n' "$VENV"
+printf '\n每次使用前执行：\n'
+printf '  source %q\n' "$ROS_SETUP"
+printf '  source %q/bin/activate\n' "$VENV"
+printf '\n只读验证：\n'
+printf '  onero-h1-print-observation --no-cameras --count 5\n'

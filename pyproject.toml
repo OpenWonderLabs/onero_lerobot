@@ -35,7 +35,7 @@ camera = ["opencv-python-headless>=4.9,<4.14"]
 # whose module paths and dataset contracts can change between releases.
 lerobot = ["lerobot[training,hardware,dataset-viz]==0.6.1; python_version >= '3.12'"]
 dev = [
-  "pytest>=8,<10",
+  "pytest>=8,<9",
   "ruff>=0.14,<0.15",
 ]
 

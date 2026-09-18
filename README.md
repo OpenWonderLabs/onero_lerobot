@@ -59,24 +59,33 @@ Not included in the first version: MoveP/MoveL, MoveIt2 action clients, Nav2 goa
 
 ## Install
 
-This adapter is pinned to **LeRobot 0.6.1**, the latest stable non-prerelease release verified on PyPI and GitHub. It requires Python 3.12 or newer.
+This adapter is pinned to **LeRobot 0.6.1** and requires Python 3.12 or newer.
 
-On the robot or ROS2 workstation:
+Choose the installer for the machine where the adapter will run. Do not mix the Jetson and workstation installers.
+
+On NVIDIA Jetson Orin:
+
+```bash
+bash scripts/setup_orin_native.sh
+```
+
+On a standard Ubuntu 24.04 computer, install the data-collection, video, and dataset-visualization environment first:
+
+```bash
+bash scripts/setup.sh
+```
+
+If the computer will also run MuJoCo, training, or CUDA rollout, run the second stage afterward:
+
+```bash
+bash scripts/setup_ubuntu24_native.sh
+```
+
+All installers use `~/.venvs/h1-lerobot`. Do not run an entire installer with `sudo` and do not install these Python dependencies globally. In each new terminal, load the environment with:
 
 ```bash
 source /opt/ros/jazzy/setup.bash
-cd packages/onero_h1_lerobot
-python3 -m pip install -e .
-# Optional: if LeRobot is not already installed
-python3 -m pip install -e '.[lerobot]'
-```
-
-`rclpy` and ROS message packages are provided by ROS2, not by PyPI. Make sure your H1 ROS workspace is sourced before running the adapter.
-
-Camera decoding needs `cv2`, but the base install does not force a PyPI OpenCV download. Check the current environment first:
-
-```bash
-python3 -c "import cv2; print(cv2.__version__)" || python3 -m pip install -e '.[camera]'
+source ~/.venvs/h1-lerobot/bin/activate
 ```
 
 ## Quick checks
@@ -181,11 +190,9 @@ The replay reads actions from the dataset and sends them to the robot via `send_
 
 ## Visualizing a recorded episode
 
-Inspect the dataset frames offline with LeRobot's built-in viewer:
-
-```bash
-# Uses the pinned release: pip install 'lerobot[dataset-viz]==0.6.1' --break-system-packages
-```
+Inspect the dataset frames offline with LeRobot's built-in viewer. The recommended
+installers already provide the required visualization dependency in the project
+virtual environment.
 
 **Option 1: Local (Recommended)** — Run directly on the robot's computer with a desktop:
 
@@ -285,9 +292,10 @@ Robot and homogeneous teleoperator expose this exact order. Arm velocities and l
 
 Install the PyTorch build appropriate for the target platform by following the official PyTorch or hardware-vendor instructions, then install this package with its pinned LeRobot dependency. The repository does not bundle platform-specific CUDA wheels or modify LeRobot sources.
 
-For Ubuntu 24.04, ROS2 Jazzy, and an RTX 50-series GPU, use the native installer after ROS2 Jazzy is installed:
+For Ubuntu 24.04, ROS2 Jazzy, and an RTX 50-series GPU, install the base environment first and then add the GPU, MuJoCo, and training dependencies:
 
 ```bash
+bash scripts/setup.sh
 bash scripts/setup_ubuntu24_native.sh
 ```
 

@@ -82,7 +82,11 @@ def _import_lerobot_dataset_tools():
     try:
         from lerobot.datasets.lerobot_dataset import LeRobotDataset
     except Exception as exc:
-        raise RuntimeError("LeRobotDataset is not available. Install LeRobot first.") from exc
+        detail = f"{type(exc).__name__}: {exc}"
+        raise RuntimeError(
+            "LeRobotDataset import failed. LeRobot may be installed, but one of its "
+            f"dataset dependencies could not be loaded ({detail})."
+        ) from exc
 
     return LeRobotDataset, build_dataset_frame, hw_to_dataset_features
 

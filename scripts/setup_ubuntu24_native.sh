@@ -29,7 +29,7 @@ fi
     --index "$TORCH_INDEX" --index-strategy unsafe-best-match \
     "torch==2.8.0" "torchvision==0.23.0"
 "$UV_BIN" pip install --python "$VENV/bin/python" \
-    "lerobot[training,hardware]==0.6.1" "mujoco==3.12.0" "pytest>=8,<10"
+    "lerobot[training,hardware]==0.6.1" "mujoco==3.12.0" "pytest>=8,<9"
 "$UV_BIN" pip install --python "$VENV/bin/python" -e "$PROJECT_DIR"
 
 "$VENV/bin/python" - <<'PY'
