@@ -22,13 +22,13 @@ usage() {
     echo ""
     echo "示例:"
     echo "  # 回放指定 episode（默认发送夹爪）"
-    echo "  bash scripts/replay.sh --repo-id my/test --episode 0"
+    echo "  bash scripts/replay.sh --repo-id my/test_20261119_153000 --episode 0"
     echo ""
     echo "  # 回放不发送夹爪"
-    echo "  bash scripts/replay.sh --repo-id my/test --episode 0 --no-gripper"
+    echo "  bash scripts/replay.sh --repo-id my/test_20261119_153000 --episode 0 --no-gripper"
     echo ""
     echo "  # 回放指定数据集路径"
-    echo "  bash scripts/replay.sh --repo-id my/test --episode 0 --root /path/to/datasets"
+    echo "  bash scripts/replay.sh --repo-id my/test_20261119_153000 --episode 0 --root /path/to/datasets"
     echo ""
     exit 0
 }

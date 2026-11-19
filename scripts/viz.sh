@@ -20,13 +20,13 @@ usage() {
     echo ""
     echo "示例:"
     echo "  # 本地查看 episode 0 的所有帧"
-    echo "  bash scripts/viz.sh --repo-id my/test --episode 0"
+    echo "  bash scripts/viz.sh --repo-id my/test_20261119_153000 --episode 0"
     echo ""
     echo "  # 保存为 rrd 文件"
-    echo "  bash scripts/viz.sh --repo-id my/test --episode 0 --save 1 --output-dir ./output"
+    echo "  bash scripts/viz.sh --repo-id my/test_20261119_153000 --episode 0 --save 1 --output-dir ./output"
     echo ""
     echo "  # 远程流式查看"
-    echo "  bash scripts/viz.sh --repo-id my/test --episode 0 --mode distant --grpc-port 9876"
+    echo "  bash scripts/viz.sh --repo-id my/test_20261119_153000 --episode 0 --mode distant --grpc-port 9876"
     echo ""
     exit 0
 }

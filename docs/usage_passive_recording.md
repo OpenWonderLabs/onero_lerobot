@@ -3,8 +3,8 @@
 本文面向项目使用者，说明 Orin 和普通 GPU 电脑的环境部署方式，以及 H1 遥操数据录制、校验、
 回放、MuJoCo 仿真和模型 rollout 的操作流程。
 
-> 默认录制是被动的：程序只订阅机器人、遥操和相机话题，不向机器人发布控制指令。
-> 回放和 `--send-hold-action` 会真实下发动作，只能在清场、急停可用且有人监护时执行。
+> 录制默认是主动控制的，会向机器人发布控制指令；加 `--passive` 才是被动录制。
+> 回放和主动控制（默认）会真实下发动作，只能在清场、急停可用且有人监护时执行。
 
 ## 脚本总览
 
@@ -12,7 +12,7 @@
 |---|---|---|:---:|
 | `setup_orin_native.sh` | 一键部署 Orin 原生依赖、虚拟环境、Jetson PyTorch、LeRobot 和本项目 | Orin | 否 |
 | `setup.sh` | 部署普通电脑的数采、视频处理和数据集可视化基础环境 | 普通电脑 | 否 |
-| `record.sh` | 录制遥操数据集 | Orin/机器人计算机 | 否（默认） |
+| `record.sh` | 录制遥操数据集 | Orin/机器人计算机 | 是（默认）；`--passive` 否 |
 | `replay.sh` | 将数据集 action 回放到机器人 | Orin/机器人计算机 | 是 |
 | `viz.sh` | 离线可视化数据集 | 任意已部署环境 | 否 |
 | `start_mujoco_viewer.sh` | 启动带界面的 H1 MuJoCo ROS 仿真器 | 图形工作站 | 仅控制仿真 |
@@ -154,28 +154,28 @@ ros2 topic echo /joystick_info --once
 bash scripts/record.sh \
   --repo-id validation/h1_homogeneous \
   --task "pick cup" \
-  --teleop-type homogeneous \
+  --passive \
   --duration 60 \
   --fps 20 \
   --cameras head,left,right \
   --root "$HOME/lerobot_datasets"
 ```
 
-录制期间正常操作主臂即可，不要添加 `--send-hold-action`。成功结束应出现：
+录制期间正常操作主臂即可。脚本默认主动控制，本文的被动录制示例都显式加了 `--passive`。
+成功结束应出现：
 
 ```text
 Episode saved and finalized successfully
 Done.
 ```
 
-`record.sh` 会把 task 转为小写短横线格式并追加到 `repo-id`。上例的实际数据集 ID 是：
+默认会在 `--repo-id` 后追加时间戳，上例的实际数据集 ID 形如
+`validation/h1_homogeneous_20261119_153000`。启动日志和结尾的 `Dataset:` 会打印实际 ID，
+后续校验、回放和可视化必须使用它。
 
-```text
-validation/h1_homogeneous_pick-cup
-```
-
-后续校验、回放和可视化必须使用这个实际 ID。启动脚本也会在录制前打印“数据集”和“存储路径”，
-建议保留该段日志。任务名用于目录后缀时宜使用简短英文。
+- 继续录制已有数据集：`--resume`，`--repo-id` 必须是完整已有 ID；
+- 保持原始 ID：`--no-stamp`，目录已存在时会报错，不会覆盖；
+- task 名称重复不会冲突，同名 task 会复用已有 task_index。
 
 无相机链路测试可添加 `--no-cameras`：
 
@@ -183,7 +183,7 @@ validation/h1_homogeneous_pick-cup
 bash scripts/record.sh \
   --repo-id validation/h1_state \
   --task "state smoke" \
-  --teleop-type homogeneous \
+  --passive \
   --duration 30 \
   --fps 20 \
   --no-cameras
@@ -195,7 +195,8 @@ bash scripts/record.sh \
 
 ```bash
 export HF_LEROBOT_HOME="$HOME/lerobot_datasets"
-export DATASET_REPO_ID="validation/h1_homogeneous_pick-cup"
+# 替换为录制结束时打印的实际 ID（默认带时间戳）
+export DATASET_REPO_ID="validation/h1_homogeneous_20261119_153000"
 export DATASET_DIR="$HF_LEROBOT_HOME/$DATASET_REPO_ID"
 
 find "$DATASET_DIR" -maxdepth 4 -type f | sort
@@ -247,24 +248,28 @@ PY
 
 | 参数 | 默认值 | 说明 |
 |---|---|---|
-| `--repo-id` | 必填 | 基础数据集 ID，例如 `team/task` |
-| `--task` | 必填 | 任务描述；脚本也会将其追加到实际数据集 ID |
-| `--teleop-type` | `homogeneous` | `homogeneous`、`heterogeneous` 或 `vr` |
+| `--repo-id` | 必填 | 数据集 ID 前缀，例如 `team/task`；默认追加时间戳作为实际 ID |
+| `--task` | 必填 | 任务描述，写入每帧的 task 元数据；重复名称不会冲突 |
+| `--resume` | 关闭 | 继续录制已有数据集；`--repo-id` 必须是完整已有 ID |
+| `--no-stamp` | 关闭 | 不追加时间戳；目录已存在时报错，不会覆盖 |
 | `--duration` | 无 | 秒数；不传时持续录制，使用停止话题结束 |
 | `--fps` | `30` | 数据集目标帧率；三相机建议先以 10～20 FPS 验证 |
 | `--cameras` | `head,left,right` | 逗号分隔的相机名 |
 | `--no-cameras` | 关闭 | 仅录制状态和 action |
+| `--teleop-type` | `homogeneous` | 遥操类型：`homogeneous`（主从同构）或 `vr` |
+| `--passive` | 关闭 | 被动录制，不下发控制指令 |
 | `--no-gripper` | 关闭 | 不订阅夹爪 action |
+| `--no-gripper-action` | 关闭 | 不向 `/joystick_info` 发布夹爪指令 |
 | `--root` | `~/lerobot_datasets` | 数据集存储根目录 |
-| `--send-hold-action` | 关闭 | 主动向机器人下发当前 action，普通数采不要使用 |
 
 ### Action 输入话题
 
+支持主从同构（onero_leader）和 VR，不支持异构：
+
 | 遥操类型 | 左臂 | 右臂 | 夹爪 |
 |---|---|---|---|
-| `homogeneous` | `/left/joint_states` | `/right/joint_states` | `/joystick_info`（`Int32`） |
-| `heterogeneous` | `/teleop/left/joint_states` | `/teleop/right/joint_states` | `/joystick_info`（`Int32`） |
-| `vr` | `/left_joint_states` | `/right_joint_states` | `/vr/left_gripper/open_ratio`、`/vr/right_gripper/open_ratio`（`Float32`） |
+| `homogeneous`（默认） | `/left/joint_states` | `/right/joint_states` | `/joystick_info`（`Int32`） |
+| `vr` | `/left_joint_states` | `/right_joint_states` | `/vr/*/gripper/open_ratio`（`Float32`） |
 
 需要覆盖默认值时使用：
 
@@ -272,8 +277,8 @@ PY
 --action-left-arm-topic
 --action-right-arm-topic
 --action-gripper-topic
---action-left-gripper-topic
---action-right-gripper-topic
+--action-left-gripper-topic    # 仅 VR
+--action-right-gripper-topic   # 仅 VR
 ```
 
 ## 优雅停止录制
@@ -284,33 +289,31 @@ PY
 ros2 topic pub /stop_recording std_msgs/msg/Bool "data: true" -1
 ```
 
-程序会在当前帧完成后保存并 finalize。`Ctrl+C` 可能在写图或保存阶段中断进程，不应作为正常停止方式。
-定时录制则会在达到 `duration × fps` 帧后自动保存。
+程序会在当前帧完成后保存并 finalize。第一次 `Ctrl+C` 与停止话题等价：结束当前帧、保存数据集，
+然后发送 `21` 让机械臂回到初始姿态；第二次 `Ctrl+C` 才强制退出。定时录制则会在达到
+`duration × fps` 帧后自动保存。
 
-## 控制指令（`--send-hold-action`）
+## 主臂自动启动与遥操握手
 
-普通被动数采不需要此参数。启用后，程序会在独立控制循环中读取遥操 action，并通过
-`/record_data` 下发双臂关节位置和速度；同构模式默认以 100 Hz 控制、以 `--fps` 频率录制。
+录制/遥操启动时，LeRobot 会自动启动主臂程序 `arm_record_node`：
 
-同构主臂如果本身也发布 `/record_data`，必须先将主臂的该输出 remap，避免两个节点同时控制从臂：
+- **被动录制**（`--passive`）：主臂正常启动，由主臂直接控制从臂；
+- **主动控制**（默认）：把 `/record_data` remap 到 `/leader/arm_data`，
+  避免与 LeRobot 的控制循环同时控制从臂。
 
-```bash
-your_leader_program --ros-args -r /record_data:=/leader/record_data
+启动后自动发送 `/joystick_info` 的 `20` 进入遥操状态，终端暂停并提示：
 
-bash scripts/record.sh \
-  --repo-id validation/h1_active_relay \
-  --task "active relay" \
-  --teleop-type homogeneous \
-  --duration 10 \
-  --fps 20 \
-  --send-hold-action
+```text
+请确认机械臂已进入遥操模式，按 Enter 开始数采或遥操...
 ```
 
-同构模式下适配器只发布 `/record_data`，不会发布 `/joystick_info`。因此不要仅为了本命令 remap
-`/joystick_info`；否则原有夹爪控制链路会被切断。如现场系统必须 remap 夹爪话题，需要另行配置转发。
+录制结束或退出遥操时发送 `21` 让两臂回到初始姿态，等待 5 秒后退出。自动化场景可加
+`--no-confirm` 跳过 Enter 提示。
 
-异构和 VR 的主动转发链路尚未在本文中作为已验收能力提供。真机测试前应先确认话题唯一发布者、
-机器人使能模式、急停和动作限位。
+`/joystick_info` 不会被 remap：它同时承载 20/21 模式握手和原有夹爪控制链路。
+
+> 如果主臂程序已在运行，自动启动会跳过，本次 remap 不会生效；请先停止旧实例。
+> VR 遥操（`--teleop-type vr`）直接订阅 VR 话题，不自动启动主臂程序。
 
 ## 回放录制的 Episode
 

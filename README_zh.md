@@ -2,7 +2,7 @@
 
 适用于 Onero H1 / SwitchBot H1 ROS2 SDK 的 LeRobot 适配器。
 
-本包将 H1 的 ROS2 话题封装为标准的 LeRobot `Robot` / `Teleoperator`，用于遥操作数据的**被动采集**——默认只订阅不发布，不参与遥操控制链路。
+本包将 H1 的 ROS2 话题封装为标准的 LeRobot `Robot` / `Teleoperator`，用于主从同构遥操数据采集。录制默认主动控制；加 `--passive` 为被动采集。
 
 ## 脚本总览
 
@@ -13,14 +13,14 @@
 | [viz.sh](scripts/viz.sh) | `lerobot-dataset-viz` | 离线可视化查看数据 | ❌ |
 
 ```bash
-# 录制
+# 录制（实际 ID 会追加时间戳，以启动日志为准）
 bash scripts/record.sh --repo-id my/test --task "pick cup" --duration 60
 
-# 回放
-bash scripts/replay.sh --repo-id my/test --episode 0
+# 回放：--repo-id 使用实际 ID，如 my/test_20261119_153000
+bash scripts/replay.sh --repo-id my/test_20261119_153000 --episode 0
 
-# 可视化（需要先安装 viz 依赖）
-bash scripts/viz.sh --repo-id my/test --episode 0
+# 可视化（使用同一个实际 ID；需要先安装 viz 依赖）
+bash scripts/viz.sh --repo-id my/test_20261119_153000 --episode 0
 ```
 
 > 详细使用说明见 [docs/usage_passive_recording.md](docs/usage_passive_recording.md)。
@@ -42,42 +42,28 @@ bash scripts/viz.sh --repo-id my/test --episode 0
 
 | 类别 | 话题来源 | 特征 |
 |------|---------|------|
-| 关节位置 `.pos` | 可配置，默认见 `--teleop-type`（homogeneous=`/left/joint_states` 等） | 双臂 14 关节；升降可选 |
+| 关节位置 `.pos` | homogeneous: `/left/joint_states`、`/right/joint_states`；VR: `/left_joint_states`、`/right_joint_states` | 双臂 14 关节；升降可选 |
 | 关节速度 `.vel` | 同上（从 JointState.velocity 字段读取或本地估算） | 双臂 14 关节，可选，默认关闭 |
 | 帧间差 `.diff` | 本地计算 | 双臂 14 关节 + 夹爪 + 升降 |
-| 夹爪 | `/joystick_info`（Int32）或 VR 独立 Float32 话题 | left_gripper.pos, right_gripper.pos |
+| 夹爪 | homogeneous: `/joystick_info`（Int32）；VR: `/vr/*/gripper/open_ratio`（Float32） | left_gripper.pos, right_gripper.pos |
 
-### 控制指令 — 默认关闭
+### 控制指令 — 默认开启
 
-通过 `--send-hold-action` 显式开启，支持 `record_data`（默认）和 `movej` 两种模式。
+录制默认执行主动控制；被动录制需显式加 `--passive`。
 
-> **注意：** 不同遥操类型的控制指令行为有所区别。
-> - `homogeneous`：已支持，详见下方说明
-> - `heterogeneous`：待定
-> - `vr`：待定
+支持主从同构（onero_leader）和 VR，不支持异构：
+- homogeneous：`/left/joint_states`、`/right/joint_states`、`/joystick_info`（Int32）
+- vr：`/left_joint_states`、`/right_joint_states`、VR 夹爪 Float32 话题
 
-**同构遥操（homogeneous）发布话题：**
+发布话题：
 
 | 话题 | 消息类型 | 内容 | 说明 |
 |------|----------|------|------|
 | `/record_data` | `Float64MultiArray` | 28 floats: 左7位置+左7速度+右7位置+右7速度 | 手臂关节控制 |
-| `/joystick_info` | ❌ 不发布 | — | 同构模式不发布夹爪命令 |
+| `/joystick_info` | `Int32` | 夹爪命令，左=`pos*100+100`，右=`pos*100+200` | homogeneous 默认发布；`--no-gripper-action` 关闭 |
 
-同构模式下启用 `--send-hold-action` 时，需要将主臂程序的 `/record_data` 和 `/joystick_info` 话题 remap 掉，避免与 oneroh1lerobot 的输出冲突：
-
-```bash
-# 主臂端 remap
-your_leader_program \
-    --ros-args -r /record_data:=/leader/arm_data \
-               -r /joystick_info:=/leader/joystick
-
-# 录制端指定 remap 后的夹爪话题
-onero-h1-record-episode \
-    --repo-id my/test --task "teleop_test" \
-    --duration 180 --teleop-type homogeneous \
-    --action-gripper-topic /leader/joystick \
-    --send-hold-action
-```
+主动录制时，LeRobot 会自动启动主臂并把 `/record_data` remap 到 `/leader/arm_data`，
+无需手动 remap。
 
 ## 安装
 
@@ -150,24 +136,40 @@ onero-h1-safe-test-action --head-yaw 0.05 --dry-run
 
 详细使用说明见 [docs/usage_passive_recording.md](docs/usage_passive_recording.md)。
 
+### 主臂自动启动与遥操握手
+
+- 录制/遥操启动时，LeRobot 会自动启动主臂程序 `arm_record_node`。
+- **被动录制**（`--passive`）：主臂正常启动，由主臂直接控制从臂。
+- **主动控制**（默认）：remap 主臂的 `/record_data`，避免与 LeRobot 的控制指令冲突。
+- 主臂启动后自动发送 `/joystick_info` 的 `20` 进入遥操状态，终端暂停并提示
+  “请确认机械臂已进入遥操模式，按 Enter 开始数采或遥操...”。
+- 录制结束或退出遥操时发送 `21` 让两臂回到初始姿态，等待 5 秒后退出。
+- 自动化/无终端场景可加 `--no-confirm`，或设置
+  `ONERO_H1_TELEOP_CONFIRM=0` 跳过 Enter 提示。
+
 ### 使用脚本启动（推荐）
 
 ```bash
 # 定时录制 60 秒
 bash scripts/record.sh --repo-id my/test --task "pick cup" --duration 60
 
-# 持续录制，通过 /stop_recording 话题停止（Ctrl+C 已禁用）
+# 持续录制，通过 /stop_recording 话题停止（也支持 Ctrl+C 优雅停止）
 bash scripts/record.sh --repo-id my/test --task "teleoperation"
 
 # 持续录制，通过 /stop_recording 优雅停止（推荐）
 bash scripts/record.sh --repo-id my/test --task "teleoperation"
 # 另一终端：ros2 topic pub /stop_recording std_msgs/msg/Bool "data: true" -1
 
-# VR 遥操录制（指定 action topic）
-bash scripts/record.sh --repo-id my/test --task "VR teleop" \
-  --action-left-arm-topic /left_joint_states \
-  --action-right-arm-topic /right_joint_states
+# 被动录制（只记录，不下发控制指令）
+bash scripts/record.sh --repo-id my/test --task "passive" --passive
+
+# VR 遥操录制（Float32 夹爪默认话题）
+bash scripts/record.sh --repo-id my/test --task "vr teleop" --teleop-type vr
 ```
+
+> 默认会给 `--repo-id` 追加时间戳（如 `my/test_20261119_153000`），实际 ID 以启动日志和结尾
+> `Dataset:` 输出为准；回放、可视化使用该 ID。继续录制已有数据集用 `--resume`，
+> 保持原始 ID 用 `--no-stamp`（目录已存在会报错，不会覆盖）。
 
 ### 直接使用 CLI
 
@@ -193,18 +195,20 @@ onero-h1-record-episode \
 
 录制完成后，可以将数据集回放到机器人上，用于验证数据质量：
 
+使用录制时打印的实际数据集 ID（默认带时间戳）：
+
 ```bash
 # 回放 episode 0（默认发送夹爪）
-onero-h1-replay-episode --repo-id my/test --episode 0
+onero-h1-replay-episode --repo-id my/test_20261119_153000 --episode 0
 
 # 回放不发送夹爪
-onero-h1-replay-episode --repo-id my/test --episode 0 --no-gripper
+onero-h1-replay-episode --repo-id my/test_20261119_153000 --episode 0 --no-gripper
 
 # 使用 movej 模式回放
-onero-h1-replay-episode --repo-id my/test --episode 0 --arm-command-mode movej
+onero-h1-replay-episode --repo-id my/test_20261119_153000 --episode 0 --arm-command-mode movej
 
 # 使用脚本
-bash scripts/replay.sh --repo-id my/test --episode 0
+bash scripts/replay.sh --repo-id my/test_20261119_153000 --episode 0
 ```
 
 回放从数据集中读取每帧的 action，通过 `send_action()` 发送到机器人，使用与录制时相同的手臂指令模式和夹爪设置。
@@ -217,14 +221,14 @@ bash scripts/replay.sh --repo-id my/test --episode 0
 **方式一：本地直接使用（推荐）** — 在机器人自带电脑上（有桌面环境）直接运行：
 
 ```bash
-bash scripts/viz.sh --repo-id my/test --episode 0
+bash scripts/viz.sh --repo-id my/test_20261119_153000 --episode 0
 ```
 
 **方式二：SSH 远程连接** — 先在机器人上启动，再从本地电脑连接：
 
 ```bash
 # 机器人上
-bash scripts/viz.sh --repo-id my/test --episode 0 --mode distant
+bash scripts/viz.sh --repo-id my/test_20261119_153000 --episode 0 --mode distant
 
 # 本地电脑上
 pip install rerun-sdk
@@ -235,7 +239,7 @@ rerun --connect rerun+http://<机器人IP>:9876/proxy
 
 ```bash
 # 机器人上
-bash scripts/viz.sh --repo-id my/test --episode 0 --save 1 --output-dir ./output
+bash scripts/viz.sh --repo-id my/test_20261119_153000 --episode 0 --save 1 --output-dir ./output
 
 # 传到本地电脑
 scp -r wlab@<机器人IP>:~/oneroh1lerobot/output ./output
@@ -255,7 +259,6 @@ rerun output/*.rrd
 lerobot-teleoperate \
   --robot.type=onero_h1 \
   --robot.id=h1 \
-  --robot.send_action=false \
   --robot.use_cameras=true \
   --robot.camera_names='["head", "left", "right"]' \
   --teleop.type=onero_h1_ros_joint \
@@ -271,7 +274,6 @@ lerobot-teleoperate \
 lerobot-record \
   --robot.type=onero_h1 \
   --robot.id=h1 \
-  --robot.send_action=false \
   --robot.use_cameras=true \
   --robot.camera_names='["head", "left", "right"]' \
   --teleop.type=onero_h1_ros_joint \
@@ -288,7 +290,11 @@ lerobot-record \
   --dataset.encoder_threads=2
 ```
 
-如果 LeRobot 版本不支持自动加载第三方插件，使用包装命令：
+> 原生 `lerobot-record` 也支持 Ctrl+C 优雅结束：插件会先保存当前正在录制的 episode，
+> 再由 LeRobot 执行 finalize 和 `robot.disconnect()`（发送 `21` 回初始姿态）。
+
+原生命令和包装命令使用同一套默认配置（主臂模式、20/21 握手、主动控制、rollout 发送动作和
+Ctrl+C 优雅保存），行为一致。如果 LeRobot 版本不支持自动加载第三方插件，改用包装命令：
 
 ```bash
 onero-h1-lerobot-teleoperate --robot.type=onero_h1 --teleop.type=onero_h1_ros_joint ...
@@ -344,12 +350,12 @@ onero-h1-lerobot-rollout \
 
 适配器在同一 Python 环境中直接调用 `rclpy`。训练和部署必须使用一致的 observation 与 action schema。
 
-当 `--send-hold-action` 开启时，控制指令通过以下话题发布（homogeneous 模式不发布夹爪）：
+主动控制（默认开启，`--passive` 关闭）时，控制指令通过以下话题发布：
 
 | 模块 | 话题 | 消息类型 | 说明 |
 |------|------|----------|------|
 | 手臂 | `/record_data` | `Float64MultiArray` | 28 维（左7位置+左7速度+右7位置+右7速度） |
-| 夹爪 | `/joystick_info` | `Int32` | 编码：左=pos×100+100，右=pos×100+200（仅 heterogeneous/vr） |
+| 夹爪 | `/joystick_info` | `Int32` | 左=pos×100+100，右=pos×100+200；`--no-gripper-action` 关闭 |
 | 升降 | `/lift/joint_states/update` | `JointState` | 如启用 |
 | 头部 | `/head/joint_states/update` | `JointState` | 如启用 |
 | 底盘 | `/cmd_vel` | `Twist` | 如启用 |

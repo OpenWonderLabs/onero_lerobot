@@ -139,6 +139,7 @@ class H1RosClient:
         self._pub_head = None
         self._pub_base = None
         self._pub_gripper = None
+        self._pub_teleop_mode = None
         self._subscriptions: list[Any] = []
         self._callback_groups: list[Any] = []
 
@@ -190,6 +191,10 @@ class H1RosClient:
 
     def _create_publishers(self) -> None:
         assert self.ros is not None and self.node is not None
+        if self.config.teleop_mode_control:
+            self._pub_teleop_mode = self.node.create_publisher(
+                self.ros.Int32, self.config.teleop_mode_topic, 10
+            )
         if not self.config.send_action:
             return
         arm_command_mode = self.config.arm_command_mode.lower()
@@ -694,6 +699,43 @@ class H1RosClient:
         msg = self.ros.Int32()
         msg.data = right_val
         self._pub_gripper.publish(msg)
+
+    def publish_teleop_mode(
+        self,
+        value: int,
+        wait_s: float = 5.0,
+        repeats: int = 5,
+    ) -> None:
+        """Publish a teleop state handshake value on the mode topic.
+
+        ``/joystick_info`` is also used for gripper commands (100-299); values
+        20/21 are the enter/exit teleop handshake understood by both arms.
+        The message is repeated briefly because a single ROS publication can be
+        lost before discovery completes.
+        """
+        if self._pub_teleop_mode is None or self.ros is None:
+            return
+
+        deadline = time.monotonic() + max(0.0, wait_s)
+        while (
+            self._pub_teleop_mode.get_subscription_count() == 0
+            and time.monotonic() < deadline
+        ):
+            time.sleep(0.1)
+
+        if self._pub_teleop_mode.get_subscription_count() == 0:
+            _logger.warning(
+                "遥操模式话题 %s 暂无订阅者，仍尝试发送 %d",
+                self.config.teleop_mode_topic,
+                value,
+            )
+
+        for _ in range(max(1, repeats)):
+            msg = self.ros.Int32()
+            msg.data = int(value)
+            self._pub_teleop_mode.publish(msg)
+            time.sleep(0.2)
+        _logger.info("已发送遥操模式指令 %d -> %s", value, self.config.teleop_mode_topic)
 
     def _warn_stale(self, key: str) -> None:
         """Warn if data for a key hasn't been received recently (debounced)."""

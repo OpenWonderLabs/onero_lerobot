@@ -26,11 +26,11 @@ robot.disconnect()
 # Record
 bash scripts/record.sh --repo-id my/test --task "pick cup" --duration 60
 
-# Replay
-bash scripts/replay.sh --repo-id my/test --episode 0
+# Replay (use the printed dataset id; recording appends a timestamp by default)
+bash scripts/replay.sh --repo-id my/test_20261119_153000 --episode 0
 
 # Visualize (requires viz deps first)
-bash scripts/viz.sh --repo-id my/test --episode 0
+bash scripts/viz.sh --repo-id my/test_20261119_153000 --episode 0
 ```
 
 > See [docs/usage_passive_recording.md](docs/usage_passive_recording.md) for detailed usage.
@@ -128,62 +128,50 @@ onero-h1-record-episode \
   --finalize
 ```
 
-By default, recording stores a hold-position action and does **not** publish actions. Add `--send-hold-action` to publish control commands to the robot.
+Active control is the default. Add `--passive` for passive recording (record only, no control commands).
+
+A new recording session appends a timestamp to `--repo-id` (e.g. `your_name/onero_h1_test_20261119_153000`), matching `lerobot-record`. Use the printed `Dataset:` id for replay/visualization. Pass `--resume` (with the full existing id) to append episodes to an existing dataset, or `--no-stamp` to keep the exact id (`--no-stamp` fails if the directory already exists; nothing is overwritten). Duplicate task names are fine.
 
 **Graceful stop (recommended):** when recording without `--duration`, publish to the stop topic to exit cleanly between frames:
 
 ```bash
 # Terminal 1: start recording
-onero-h1-record-episode --repo-id my/test --task "teleop" --teleop-type homogeneous
+onero-h1-record-episode --repo-id my/test --task "teleop"
 
 # Terminal 2: stop gracefully
 ros2 topic pub /stop_recording std_msgs/msg/Bool "data: true" -1
 ```
 
-This avoids the truncated image / partial frame issues that Ctrl+C can cause. Ctrl+C is disabled; use the stop topic instead. See [docs/usage_passive_recording.md](docs/usage_passive_recording.md) for details.
+The first Ctrl+C is also handled gracefully: the current frame finishes, the episode is saved, the exit handshake (`21`) is sent, and the robot returns home. A second Ctrl+C forces an immediate exit. The stop topic remains the recommended way to stop from another terminal. See [docs/usage_passive_recording.md](docs/usage_passive_recording.md) for details.
 
-**Teleop types** (set via `--teleop-type`):
+**Homogeneous leader/follower (onero_leader) and VR teleoperation are supported**; heterogeneous teleoperation is not. Select the mode with `--teleop-type homogeneous` (default) or `--teleop-type vr`:
 
-| Type | Arm action input | Gripper action input | send_action output |
-|------|-----------------|---------------------|--------------------|
-| `homogeneous` (default) | `/left/joint_states`, `/right/joint_states` | `/joystick_info` (Int32) | `/record_data` only (no gripper) |
-| `heterogeneous` | `/teleop/left/joint_states`, `/teleop/right/joint_states` | `/joystick_info` (Int32) | TBD |
-| `vr` | `/left_joint_states`, `/right_joint_states` | `/vr/left_gripper/open_ratio`, `/vr/right_gripper/open_ratio` (Float32) | TBD |
+| Teleop type | Arm action input | Gripper action input |
+|-------------|-----------------|---------------------|
+| `homogeneous` | `/left/joint_states`, `/right/joint_states` | `/joystick_info` (Int32) |
+| `vr` | `/left_joint_states`, `/right_joint_states` | `/vr/left_gripper/open_ratio`, `/vr/right_gripper/open_ratio` (Float32) |
 
-**Note on homogeneous mode with `--send-hold-action`:** the leader arm program directly publishes to `/record_data` and `/joystick_info` to control the follower. To let oneroh1lerobot take over, remap the leader's topics:
-
-```bash
-# Leader arm side
-your_leader_program \
-    --ros-args -r /record_data:=/leader/arm_data \
-               -r /joystick_info:=/leader/joystick
-
-# Recording side
-onero-h1-record-episode \
-    --repo-id my/test --task "teleop_test" \
-    --duration 180 --teleop-type homogeneous \
-    --action-gripper-topic /leader/joystick \
-    --send-hold-action
-```
-
-In homogeneous mode, only arm joint commands are published via `/record_data`; gripper commands are **not** published, since the leader arm handles gripper directly.
+When active control starts, LeRobot automatically remaps the leader's `/record_data` to
+`/leader/arm_data`; no manual remap is needed. Gripper commands are published to
+`/joystick_info` by default; use `--no-gripper-action` to disable them.
 
 ## Replaying a recorded episode
 
-Replay a recorded episode on the robot to verify data quality:
+Replay a recorded episode on the robot to verify data quality. Use the actual dataset id
+printed at recording start/end (it carries a timestamp by default):
 
 ```bash
 # Replay episode 0 (sends gripper commands by default)
-onero-h1-replay-episode --repo-id my/test --episode 0
+onero-h1-replay-episode --repo-id my/test_20261119_153000 --episode 0
 
 # Replay without gripper commands
-onero-h1-replay-episode --repo-id my/test --episode 0 --no-gripper
+onero-h1-replay-episode --repo-id my/test_20261119_153000 --episode 0 --no-gripper
 
 # Replay with custom arm command mode
-onero-h1-replay-episode --repo-id my/test --episode 0 --arm-command-mode movej
+onero-h1-replay-episode --repo-id my/test_20261119_153000 --episode 0 --arm-command-mode movej
 
 # Using the script
-bash scripts/replay.sh --repo-id my/test --episode 0
+bash scripts/replay.sh --repo-id my/test_20261119_153000 --episode 0
 ```
 
 The replay reads actions from the dataset and sends them to the robot via `send_action()`, using the same arm command mode and gripper settings as the recording pipeline.
@@ -197,14 +185,14 @@ virtual environment.
 **Option 1: Local (Recommended)** — Run directly on the robot's computer with a desktop:
 
 ```bash
-bash scripts/viz.sh --repo-id my/test --episode 0
+bash scripts/viz.sh --repo-id my/test_20261119_153000 --episode 0
 ```
 
 **Option 2: SSH remote** — Start on the robot, connect from your local machine:
 
 ```bash
 # On the robot
-bash scripts/viz.sh --repo-id my/test --episode 0 --mode distant
+bash scripts/viz.sh --repo-id my/test_20261119_153000 --episode 0 --mode distant
 
 # On your local machine
 pip install rerun-sdk
@@ -215,7 +203,7 @@ rerun --connect rerun+http://<robot-ip>:9876/proxy
 
 ```bash
 # On the robot
-bash scripts/viz.sh --repo-id my/test --episode 0 --save 1 --output-dir ./output
+bash scripts/viz.sh --repo-id my/test_20261119_153000 --episode 0 --save 1 --output-dir ./output
 
 # Transfer and view locally
 scp -r wlab@<robot-ip>:~/oneroh1lerobot/output ./output
@@ -266,7 +254,11 @@ lerobot-record \
   --dataset.encoder_threads=2
 ```
 
-If your LeRobot version does not auto-load third-party plugins, use the wrapper commands, which import this package before delegating to LeRobot:
+> Native `lerobot-record` also handles Ctrl+C gracefully: the plugin saves the in-progress
+> episode first, then LeRobot finalizes the dataset and calls `robot.disconnect()` (which sends
+> the `21` handshake to return the arms home).
+
+Native commands and wrapper commands apply the same robot defaults (leader arm mode, 20/21 handshake, active control, rollout action sending, and graceful Ctrl+C saving). If your LeRobot version does not auto-load third-party plugins, use the wrapper commands, which import this package before delegating to LeRobot:
 
 ```bash
 onero-h1-lerobot-teleoperate --robot.type=onero_h1 --teleop.type=onero_h1_ros_joint ...
@@ -322,12 +314,12 @@ onero-h1-lerobot-rollout \
 
 The adapter calls `rclpy` directly in the same Python environment. Training and deployment must use matching observation and action schemas.
 
-When `--send-hold-action` is enabled, control commands are published to:
+When active control is enabled (default), control commands are published to:
 
 | Module | Topic | Type | Description |
 |--------|-------|------|-------------|
 | Arm | `/record_data` | `Float64MultiArray` | 28 floats (left7 pos + left7 vel + right7 pos + right7 vel) |
-| Gripper | `/joystick_info` | `Int32` | left=`int(pos*100+100)`, right=`int(pos*100+200)` (heterogeneous/vr only) |
+| Gripper | `/joystick_info` | `Int32` | left=`int(pos*100+100)`, right=`int(pos*100+200)`; `--no-gripper-action` disables |
 | Lift | `/lift/joint_states/update` | `JointState` | when enabled |
 | Head | `/head/joint_states/update` | `JointState` | when enabled |
 | Base | `/cmd_vel` | `Twist` | when enabled |

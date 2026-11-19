@@ -7,12 +7,7 @@ import sys
 # Importing the package registers OneroH1Config and OneroH1RosJointTeleopConfig
 # with LeRobot's draccus registries when LeRobot is installed.
 import onero_h1_lerobot  # noqa: F401
-
-
-def _ensure_default_fps(argv: list[str]) -> None:
-    if any(arg == "--fps" or arg.startswith("--fps=") for arg in argv[1:]):
-        return
-    argv.append("--fps=100")
+from onero_h1_lerobot.native_cli import configure_for_command
 
 
 def main() -> None:
@@ -24,8 +19,14 @@ def main() -> None:
             "python3 -m pip install -e '.[lerobot]'"
         ) from None
 
-    _ensure_default_fps(sys.argv)
-    lerobot_teleoperate_main()
+    configure_for_command(sys.argv)
+    try:
+        lerobot_teleoperate_main()
+    except KeyboardInterrupt:
+        # LeRobot's teleoperate performs its own cleanup (robot.disconnect),
+        # which sends the 21 handshake and waits for the arms to return home.
+        # Catching here only avoids a traceback on Ctrl+C.
+        pass
 
 
 if __name__ == "__main__":

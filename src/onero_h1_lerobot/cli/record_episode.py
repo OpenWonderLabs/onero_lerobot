@@ -4,11 +4,47 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
+import signal
 import threading
 import time
+from datetime import datetime
+
 
 from onero_h1_lerobot import OneroH1Config, OneroH1Robot
 from onero_h1_lerobot.teleoperator import OneroH1RosJointTeleop, OneroH1RosJointTeleopConfig
+
+
+def resolve_dataset_target(
+    repo_id: str,
+    dataset_home: str,
+    *,
+    resume: bool = False,
+    no_stamp: bool = False,
+    now: datetime | None = None,
+) -> tuple[str, str]:
+    """Resolve the final repo id and root using LeRobot's startup semantics.
+
+    New sessions get a timestamp suffix; ``--resume`` appends to an existing
+    dataset and ``--no-stamp`` keeps the id but never overwrites.
+    """
+    root = os.path.join(dataset_home, repo_id)
+    if resume:
+        if not os.path.exists(root):
+            raise SystemExit(f"--resume 指定的数据集不存在: {root}")
+        return repo_id, root
+    if no_stamp:
+        if os.path.exists(root):
+            raise SystemExit(
+                f"数据集已存在: {root}。继续录制请加 --resume；"
+                "或去掉 --no-stamp 以生成带时间戳的新数据集。"
+            )
+        return repo_id, root
+    stamped = f"{repo_id}_{(now or datetime.now()).strftime('%Y%m%d_%H%M%S')}"
+    stamped_root = os.path.join(dataset_home, stamped)
+    if os.path.exists(stamped_root):
+        raise SystemExit(f"时间戳数据集已存在: {stamped_root}，请稍后重试")
+    return stamped, stamped_root
 
 _logger = logging.getLogger("onero_h1.record")
 
@@ -70,6 +106,28 @@ def _start_stop_subscriber(
     logger.info("Stop subscriber active on '%s' (publish True to stop)", topic)
 
 
+def _install_stop_on_sigint(stop_event: threading.Event) -> object:
+    """Turn the first Ctrl+C into the same graceful stop as the stop topic.
+
+    The recording loop checks ``stop_event`` between frames, so the current
+    frame finishes, the episode is saved, and the teleop exit handshake (21)
+    still runs. A second Ctrl+C restores the default handler so the user can
+    force an immediate exit if needed.
+    """
+    previous = signal.getsignal(signal.SIGINT)
+
+    def _handler(signum, frame) -> None:  # noqa: ARG001
+        if stop_event.is_set():
+            signal.signal(signal.SIGINT, signal.SIG_DFL)
+            print("\n\n再次收到 Ctrl+C，已恢复强制退出。")
+            return
+        stop_event.set()
+        print("\n\n收到 Ctrl+C，正在结束当前帧并保存，请稍候...")
+
+    signal.signal(signal.SIGINT, _handler)
+    return previous
+
+
 def _import_lerobot_dataset_tools():
     try:
         from lerobot.datasets.feature_utils import build_dataset_frame, hw_to_dataset_features
@@ -97,25 +155,40 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--root", default=None, help="Optional local dataset root")
     parser.add_argument("--task", required=True, help="Task description stored in each frame")
     parser.add_argument(
+        "--resume",
+        action="store_true",
+        help="Continue recording an existing dataset; --repo-id must be its full existing id.",
+    )
+    parser.add_argument(
+        "--no-stamp",
+        action="store_true",
+        help="Keep --repo-id exactly; fail if the dataset directory already exists.",
+    )
+    parser.add_argument(
         "--duration",
         type=float,
         default=None,
-        help="Episode duration in seconds. If not set, records until Ctrl+C.",
+        help="Episode duration in seconds. If not set, records until /stop_recording or Ctrl+C.",
     )
     parser.add_argument("--fps", type=int, default=30, help="Recording frame rate")
     parser.add_argument("--id", default="onero_h1", help="Robot id")
     parser.add_argument(
         "--teleop-type",
         default="homogeneous",
-        choices=["homogeneous", "heterogeneous", "vr"],
-        help="Teleop strategy: homogeneous | heterogeneous | vr",
+        choices=["homogeneous", "vr"],
+        help="Teleop strategy: homogeneous (leader arm) | vr",
     )
     parser.add_argument("--no-cameras", action="store_true", help="Disable camera features")
     parser.add_argument("--cameras", default="head,left,right", help="Comma-separated camera names")
     parser.add_argument(
+        "--passive",
+        action="store_true",
+        help="Passive recording: do not publish control commands to the robot.",
+    )
+    parser.add_argument(
         "--send-hold-action",
         action="store_true",
-        help="Publish the current state as a hold action at every frame. Off by default for safety.",
+        help=argparse.SUPPRESS,
     )
     parser.add_argument(
         "--finalize",
@@ -125,17 +198,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--action-left-arm-topic",
         default=None,
-        help="Left arm action topic for teleoperator (default depends on teleop type)",
+        help="Left arm action topic (default: /left/joint_states)",
     )
     parser.add_argument(
         "--action-right-arm-topic",
         default=None,
-        help="Right arm action topic for teleoperator (default depends on teleop type)",
+        help="Right arm action topic (default: /right/joint_states)",
     )
     parser.add_argument(
         "--action-gripper-topic",
         default=None,
-        help="Gripper action topic for teleoperator (default depends on teleop type)",
+        help="Gripper action topic (default: /joystick_info)",
     )
     parser.add_argument(
         "--action-left-gripper-topic",
@@ -148,22 +221,25 @@ def parse_args() -> argparse.Namespace:
         help="Right gripper action topic for VR teleop (Float32)",
     )
     parser.add_argument(
-        "--gripper-type",
-        default=None,
-        choices=["int32", "float32"],
-        help="Gripper message type: int32 (joint teleop) or float32 (VR teleop). Default depends on --teleop-type.",
-    )
-    parser.add_argument(
         "--no-gripper",
         action="store_true",
         help="Disable gripper action subscription (use when gripper topic is not available)",
     )
     parser.add_argument(
+        "--no-gripper-action",
+        action="store_true",
+        help="Do not publish gripper commands to /joystick_info.",
+    )
+    parser.add_argument(
+        "--no-confirm",
+        action="store_true",
+        help="Skip the 'press Enter to start teleop' confirmation prompt",
+    )
+    parser.add_argument(
         "--control-hz",
         type=float,
         default=None,
-        help="Control publish frequency in Hz. For homogeneous teleop, defaults to 100; "
-             "otherwise defaults to the recording fps. Only relevant with --send-hold-action.",
+        help="Control publish frequency in Hz. Defaults to 100; only used in active mode.",
     )
     parser.add_argument(
         "--stop-topic",
@@ -188,15 +264,20 @@ def main() -> None:
         id=args.id,
         use_cameras=not args.no_cameras,
         camera_names=camera_names,
-        send_action=args.send_hold_action,
-        # Homogeneous teleoperation: the leader arm directly controls the follower
-        # via the same /record_data path, so we don't need to send gripper commands
-        # from the recording pipeline.
-        send_gripper_action=args.teleop_type != "homogeneous",
+        send_action=not args.passive,
+        # The leader arm program is only used by homogeneous teleop; VR reads
+        # from the headset topics instead.
+        auto_start_arm_node=args.teleop_type != "vr",
+        # Active control is the default; passive recording starts the leader
+        # normally without remapping its command topic.
+        arm_node_mode="record" if args.passive else "teleop",
+        teleop_confirm=not args.no_confirm,
+        # onero_leader gripper behavior: publish Int32 commands by default.
+        send_gripper_action=not args.no_gripper_action,
     )
     robot = OneroH1Robot(config)
 
-    # 创建 Teleoperator，根据遥操类型自动设置话题和夹爪处理策略
+    # 创建 Teleoperator：支持主从同构和 VR，默认话题 onero_leader
     teleop_config = OneroH1RosJointTeleopConfig(
         teleop_type=args.teleop_type,
         use_lift=False,
@@ -215,8 +296,6 @@ def main() -> None:
         teleop_config.left_gripper_topic = args.action_left_gripper_topic
     if args.action_right_gripper_topic:
         teleop_config.right_gripper_topic = args.action_right_gripper_topic
-    if args.gripper_type is not None:
-        teleop_config.gripper_type = args.gripper_type
 
     teleop = OneroH1RosJointTeleop(teleop_config)
 
@@ -225,23 +304,23 @@ def main() -> None:
     dataset_features = {**obs_features, **action_features}
 
     create_kwargs = {
-        "repo_id": args.repo_id,
         "fps": args.fps,
         "features": dataset_features,
         "robot_type": robot.name,
         "use_videos": not args.no_cameras,
     }
-    import os as _os
+    dataset_home = args.root or os.environ.get(
+        "HF_LEROBOT_HOME",
+        os.path.join(os.path.expanduser("~"), "lerobot_datasets"),
+    )
+    repo_id, dataset_root = resolve_dataset_target(
+        args.repo_id, dataset_home, resume=args.resume, no_stamp=args.no_stamp
+    )
+    create_kwargs["repo_id"] = repo_id
 
-    if args.root:
-        create_kwargs["root"] = args.root
-        dataset_root = _os.path.join(args.root, args.repo_id)
-    else:
-        dataset_root = _os.path.join(_os.environ.get("HF_LEROBOT_HOME", _os.path.join(_os.path.expanduser("~"), "lerobot_datasets")), args.repo_id)
-
-    if _os.path.exists(dataset_root):
-        _logger.info("Dataset already exists, checking feature compatibility...")
-        existing = LeRobotDataset.resume(args.repo_id, root=str(dataset_root))
+    if args.resume:
+        _logger.info("继续录制已有数据集: %s，检查 feature 兼容性...", dataset_root)
+        existing = LeRobotDataset.resume(repo_id, root=str(dataset_root))
 
         # LeRobot 0.6.1 adds bookkeeping fields such as timestamp/index to
         # ``existing.features``. Compare only non-default dataset fields, and
@@ -279,26 +358,33 @@ def main() -> None:
             raise SystemExit(1)
         dataset = existing
     else:
+        _logger.info("创建新数据集: %s (%s)", repo_id, dataset_root)
         dataset = LeRobotDataset.create(**create_kwargs)
 
     frame_count = max(1, int(args.duration * args.fps)) if args.duration is not None else None
     period = 1.0 / max(args.fps, 1)
 
-    # Set up graceful stop via ROS2 topic. Publish True to /stop_recording
-    # (or --stop-topic) to stop cleanly between frames, avoiding the truncated
-    # image / partial frame issues that Ctrl+C can cause.
+    # Graceful stop: publish True to /stop_recording (or --stop-topic), or press
+    # Ctrl+C once (converted to the same stop event below). Both stop between
+    # frames so the episode is saved cleanly.
     stop_event = threading.Event()
 
     _logger.info(
-        "Recording started: repo=%s task=%s fps=%d duration=%s cameras=%s",
-        args.repo_id, args.task, args.fps,
+        "Recording started: repo=%s root=%s task=%s fps=%d duration=%s cameras=%s",
+        repo_id, dataset_root, args.task, args.fps,
         f"{args.duration}s" if args.duration else "indefinite",
         args.cameras,
     )
 
     with robot:
+        # Send the teleop handshake (20) and wait for the operator to confirm
+        # before the recording/control loop starts.
+        robot.enter_teleop_mode(confirm=not args.no_confirm)
         # Stop subscriber must be created after rclpy.init() (called by robot.connect())
         _start_stop_subscriber(args.stop_topic, stop_event, _logger)
+        # Ctrl+C is handled here (after the Enter prompt) so the first press
+        # behaves exactly like publishing True to the stop topic.
+        previous_sigint = _install_stop_on_sigint(stop_event)
 
         with teleop:
             # ── Control frequency ──────────────────────────────────────────
@@ -323,7 +409,7 @@ def main() -> None:
                     loop_start = time.perf_counter()
                     try:
                         action = teleop.get_action()
-                        if args.send_hold_action:
+                        if not args.passive:
                             action = robot.send_action(action)
                         with sent_action_lock:
                             sent_action_ref[0] = dict(action)
@@ -334,7 +420,7 @@ def main() -> None:
                     if sleep_s > 0:
                         time.sleep(sleep_s)
 
-            if args.send_hold_action:
+            if not args.passive:
                 control_thread = threading.Thread(
                     target=_control_loop, name="control_loop", daemon=True,
                 )
@@ -353,7 +439,7 @@ def main() -> None:
 
                 start = time.perf_counter()
                 obs = robot.get_observation()
-                if args.send_hold_action:
+                if not args.passive:
                     with sent_action_lock:
                         action = sent_action_ref[0] if sent_action_ref[0] is not None else teleop.get_action()
                 else:
@@ -378,10 +464,15 @@ def main() -> None:
                     print(f"Recorded frame {i} ({i * period:.1f}s)  |  Publish to {args.stop_topic} to stop", end="\r")
 
             # ── Stop control thread before disconnecting ──────────────────
-            if args.send_hold_action:
-                stop_event.set()
+            # Set the event unconditionally so the stop-topic subscriber also
+            # exits cleanly in passive mode.
+            stop_event.set()
+            if not args.passive:
                 control_thread.join(timeout=2.0)
                 _logger.info("Control loop stopped")
+
+        # The recording loop is done; restore the default Ctrl+C behavior.
+        signal.signal(signal.SIGINT, previous_sigint)
 
     if i == 0:
         print("No frames recorded. Skipping save.")
@@ -389,14 +480,15 @@ def main() -> None:
         return
 
     print("Saving episode...")
-    _logger.info("Saving episode to %s (%d frames)...", args.repo_id, i)
+    _logger.info("Saving episode to %s (%d frames)...", repo_id, i)
 
     dataset.save_episode()
     # LeRobot 0.6.1 requires finalize() to flush writer/parquet metadata. A
     # finalized dataset remains appendable in a later process via resume().
     dataset.finalize()
     _logger.info("Episode saved and finalized successfully")
-    print("Done.")
+    print(f"Done. Dataset: {repo_id}")
+    print(f"Path: {dataset_root}")
 
 
 if __name__ == "__main__":

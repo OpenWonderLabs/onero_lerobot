@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
 
 from .compat import RobotConfig
@@ -57,6 +58,35 @@ class OneroH1Config(RobotConfig):
     executor_threads: int = 2
     connect_timeout_s: float = 5.0
 
+    # Leader arm bridge: automatically start `arm_record_node` on connect.
+    # Requires the robot_ws deployment (devices + /usr/local/bin/arm_record_node).
+    auto_start_arm_node: bool = True
+    arm_node_executable: str = "arm_record_node"
+
+    # Leader arm startup mode:
+    # - "record": passive, start normally (leader directly controls the follower)
+    # - "teleop": active, remap the leader's /record_data so LeRobot is the only
+    #   publisher of the follower command topic.
+    arm_node_mode: str = field(
+        default_factory=lambda: os.environ.get("ONERO_H1_ARM_NODE_MODE", "record")
+    )
+
+    # Teleop state handshake on /joystick_info: 20 = enter teleop, 21 = back to
+    # the initial pose. The same topic also carries gripper commands (100-299).
+    teleop_mode_control: bool = True
+    teleop_mode_topic: str = "/joystick_info"
+    teleop_mode_enter_value: int = 20
+    teleop_mode_exit_value: int = 21
+    teleop_exit_delay_s: float = 5.0
+    teleop_confirm: bool = field(
+        default_factory=lambda: os.environ.get("ONERO_H1_TELEOP_CONFIRM", "1").lower()
+        not in ("0", "false", "no")
+    )
+    auto_enter_teleop: bool = field(
+        default_factory=lambda: os.environ.get("ONERO_H1_AUTO_TELEOP", "0").lower()
+        in ("1", "true", "yes")
+    )
+
     # Robot modules included in observations/actions
     use_left_arm: bool = True
     use_right_arm: bool = True
@@ -98,12 +128,15 @@ class OneroH1Config(RobotConfig):
     # Action diff (computed locally) — frame-to-frame action position delta
     use_action_diff: bool = True
 
-    # Whether to publish control commands to the robot (default: passive recording only)
-    send_action: bool = False
+    # Whether to publish control commands to the robot.
+    # Recording enables this by default; use --passive for passive recording.
+    send_action: bool = field(
+        default_factory=lambda: os.environ.get("ONERO_H1_SEND_ACTION", "0").lower()
+        in ("1", "true", "yes")
+    )
 
     # Whether to publish gripper commands via /joystick_info (Int32) when send_action is True.
-    # Set to False for homogeneous teleoperation to avoid interfering with the leader arm's
-    # direct gripper control path.
+    # Default onero_leader behavior; disable with --no-gripper-action.
     send_gripper_action: bool = True
 
     # Camera configuration. Keys become LeRobot image feature names.

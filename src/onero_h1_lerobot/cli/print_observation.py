@@ -34,7 +34,13 @@ def summarize_value(value):
 def main() -> None:
     args = parse_args()
     camera_names = tuple(name.strip() for name in args.cameras.split(",") if name.strip())
-    config = OneroH1Config(id=args.id, use_cameras=not args.no_cameras, camera_names=camera_names)
+    # Read-only: do not start the leader arm (it would drive the follower).
+    config = OneroH1Config(
+        id=args.id,
+        use_cameras=not args.no_cameras,
+        camera_names=camera_names,
+        auto_start_arm_node=False,
+    )
     robot = OneroH1Robot(config)
 
     with robot:

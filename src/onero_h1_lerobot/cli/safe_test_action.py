@@ -27,6 +27,8 @@ def main() -> None:
         use_left_arm=args.include_arms,
         use_right_arm=args.include_arms,
         require_complete_arm_action=False,
+        auto_start_arm_node=False,
+        auto_enter_teleop=False,
     )
     robot = OneroH1Robot(config)
 

@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import logging
+import sys
+import time
 from typing import Any
 
 import numpy as np
 
+from .arm_node import ArmNodeLauncher, resolve_remaps
 from .compat import Robot, RobotAction, RobotObservation
 from .config import OneroH1Config
 from .ros_client import H1RosClient
@@ -31,6 +34,8 @@ class OneroH1Robot(Robot):
         self.config = config
         self.client: H1RosClient | None = None
         self._limiter = ActionLimiter(config)
+        self._arm_node_launcher: ArmNodeLauncher | None = None
+        self._teleop_mode_active = False
         self.cameras = {name: None for name in config.camera_names} if config.use_cameras else {}
         self._last_arm_movej_positions: dict[str, list[float]] = {}
         self._last_arm_movej_time: dict[str, float] = {}
@@ -156,18 +161,33 @@ class OneroH1Robot(Robot):
         if self.is_connected:
             return
         _logger.info("OneroH1Robot connecting...")
-        self.client = H1RosClient(self.config)
-        self.client.connect()
-        ready = self.client.wait_for_first_observation(self.config.connect_timeout_s)
-        if self.config.use_cameras and not ready:
-            _logger.warning(
-                "Camera warm-up timed out (%.1fs). Missing camera frames will be filled with zeros. "
-                "Use --no-cameras if no cameras are available.",
-                self.config.connect_timeout_s,
+        if self.config.auto_start_arm_node:
+            remaps = resolve_remaps(self.config.arm_node_mode)
+            self._arm_node_launcher = ArmNodeLauncher(
+                self.config.arm_node_executable,
+                remaps=remaps,
             )
-        _logger.info("OneroH1Robot connected (cameras ready=%s)", ready)
-        if calibrate and not self.is_calibrated:
-            self.calibrate()
+            self._arm_node_launcher.start()
+        self.client = H1RosClient(self.config)
+        try:
+            self.client.connect()
+            ready = self.client.wait_for_first_observation(self.config.connect_timeout_s)
+            if self.config.use_cameras and not ready:
+                _logger.warning(
+                    "Camera warm-up timed out (%.1fs). Missing camera frames will be filled with zeros. "
+                    "Use --no-cameras if no cameras are available.",
+                    self.config.connect_timeout_s,
+                )
+            _logger.info("OneroH1Robot connected (cameras ready=%s)", ready)
+            if calibrate and not self.is_calibrated:
+                self.calibrate()
+            if self.config.auto_enter_teleop:
+                self.enter_teleop_mode()
+        except BaseException:
+            # Do not leave the leader arm node or ROS client running when a
+            # startup step fails or the operator presses Ctrl+C at the prompt.
+            self.disconnect()
+            raise
 
     def _require_connected(self) -> H1RosClient:
         if not self.is_connected or self.client is None:
@@ -551,8 +571,70 @@ class OneroH1Robot(Robot):
 
         return clipped
 
+    def enter_teleop_mode(self, confirm: bool | None = None) -> None:
+        """Put both arms into teleop state and optionally wait for confirmation.
+
+        The ``20`` handshake is published on ``/joystick_info``. For interactive
+        terminals the call then blocks until the operator presses Enter, so the
+        arms stay still while the user gets ready.
+        """
+        if self._teleop_mode_active:
+            return
+        client = self._require_connected()
+        self._teleop_mode_active = True
+        try:
+            client.publish_teleop_mode(self.config.teleop_mode_enter_value)
+        except BaseException:
+            self.exit_teleop_mode()
+            raise
+
+        should_confirm = self.config.teleop_confirm if confirm is None else confirm
+        if not should_confirm:
+            return
+        if not sys.stdin.isatty():
+            _logger.info("非交互终端，跳过遥操确认提示")
+            return
+
+        try:
+            input("请确认机械臂已进入遥操模式，按 Enter 开始数采或遥操...")
+        except (EOFError, KeyboardInterrupt):
+            self.exit_teleop_mode()
+            raise
+
+    def exit_teleop_mode(self) -> None:
+        """Publish the ``21`` handshake and wait for the arms to return home."""
+        if not self._teleop_mode_active:
+            return
+        self._teleop_mode_active = False
+        client = self.client
+        if client is None:
+            return
+
+        try:
+            client.publish_teleop_mode(
+                self.config.teleop_mode_exit_value,
+                wait_s=2.0,
+            )
+        except Exception:
+            _logger.warning("发送退出遥操指令失败", exc_info=True)
+        delay = max(0.0, float(self.config.teleop_exit_delay_s))
+        if delay > 0:
+            _logger.info("等待机械臂回到初始姿态（%.1fs）...", delay)
+            try:
+                time.sleep(delay)
+            except KeyboardInterrupt:
+                # A second Ctrl+C during shutdown should still leave the
+                # remaining cleanup (client/node/leader arm node) to run.
+                _logger.warning("退出等待被中断，机械臂可能尚未完全回到初始姿态")
+
     def disconnect(self) -> None:
-        if self.client is not None:
-            self.client.disconnect()
-        self.client = None
-        self._limiter.reset()
+        try:
+            self.exit_teleop_mode()
+        finally:
+            if self.client is not None:
+                self.client.disconnect()
+            self.client = None
+            if self._arm_node_launcher is not None:
+                self._arm_node_launcher.stop()
+                self._arm_node_launcher = None
+            self._limiter.reset()
