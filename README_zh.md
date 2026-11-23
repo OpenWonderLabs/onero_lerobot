@@ -299,6 +299,45 @@ Robot 与同构 Teleoperator 使用完全相同的顺序。速度动作和升降
 `use_arm_velocity_action=True`、`use_lift_action=True` 显式开启；第一版训练数据不要开启。
 默认 policy state 为 17 维（双臂位置 14 + 夹爪 2 + 升降 1），与 LeRobot rollout 的硬件特征筛选一致。`.effort`、`.diff`、`.diff_pos` 和底盘观测均可显式开启，但开启后训练与部署必须使用相同配置。
 
+### 适配模型的特征布局
+
+默认 `policy_feature_layout=native` 保持原有特征名称和顺序。对于按“左臂 7 关节、
+左夹爪、右臂 7 关节、右夹爪”训练的 16 维模型，设置：
+
+```bash
+--robot.policy_feature_layout=interleaved --robot.use_lift=false
+```
+
+此时观测和动作统一使用以下名称及顺序：
+
+```text
+left_joint_1.pos ... left_joint_7.pos, left_gripper.pos,
+right_joint_1.pos ... right_joint_7.pos, right_gripper.pos
+```
+
+适配器将模型动作映射回对应的 ROS 关节和夹爪。ROS 话题、关节单位、控制报文和
+现有限位设置保持不变。该布局固定为 16 维位置量，要求启用双臂和夹爪，关闭升降、
+头部、速度通道及额外标量观测。
+
+采集同一布局的数据时，机器人与遥操端都要设置：
+
+```bash
+lerobot-record \
+  --robot.type=onero_h1 \
+  --robot.policy_feature_layout=interleaved \
+  --robot.use_lift=false \
+  --robot.send_action=false \
+  --teleop.type=onero_h1_ros_joint \
+  --teleop.policy_feature_layout=interleaved \
+  --dataset.repo_id=your_name/a1_cloth \
+  --dataset.single_task="Fold the cloth" \
+  --dataset.push_to_hub=false
+```
+
+先使用 `lerobot-rollout --robot.policy_feature_layout=interleaved
+--robot.use_lift=false --robot.send_action=false ...` 检查真实观测和模型输出，
+确认完整特征契约后再开启动作发布。修改仅在本适配器内，官方 LeRobot 0.6.1 无需改动。
+
 ### 策略部署
 
 请按照 PyTorch 官方文档或目标硬件厂商文档安装适合当前平台的 PyTorch，再安装本项目固定的 LeRobot 依赖。本仓库不捆绑特定平台的 CUDA wheel，也不修改 LeRobot 源码。
