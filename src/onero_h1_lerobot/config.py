@@ -98,6 +98,10 @@ class OneroH1Config(RobotConfig):
     # Action diff (computed locally) — frame-to-frame action position delta
     use_action_diff: bool = True
 
+    # native preserves the existing schema. interleaved exports the checkpoint
+    # layout: left joints 1..7, left gripper, right joints 1..7, right gripper.
+    policy_feature_layout: str = "native"
+
     # Whether to publish control commands to the robot (default: passive recording only)
     send_action: bool = False
 
