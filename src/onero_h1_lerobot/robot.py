@@ -9,6 +9,11 @@ import numpy as np
 
 from .compat import Robot, RobotAction, RobotObservation
 from .config import OneroH1Config
+from .feature_layout import (
+    export_policy_features,
+    make_policy_feature_map,
+    policy_action_to_hardware,
+)
 from .ros_client import H1RosClient
 from .safety import ActionLimiter
 from .utils import normalize_action_dict, now_monotonic
@@ -29,6 +34,7 @@ class OneroH1Robot(Robot):
     def __init__(self, config: OneroH1Config):
         super().__init__(config)
         self.config = config
+        self._policy_feature_map = make_policy_feature_map(config)
         self.client: H1RosClient | None = None
         self._limiter = ActionLimiter(config)
         self.cameras = {name: None for name in config.camera_names} if config.use_cameras else {}
@@ -61,7 +67,7 @@ class OneroH1Robot(Robot):
         return None
 
     @property
-    def action_feature_names(self) -> tuple[str, ...]:
+    def _hardware_action_feature_names(self) -> tuple[str, ...]:
         names: list[str] = []
         if self.config.use_left_arm:
             names.extend(f"left_arm.{joint}.pos" for joint in self.config.left_arm_joint_names)
@@ -80,6 +86,12 @@ class OneroH1Robot(Robot):
         if self.config.use_base_velocity_action:
             names.extend(["base.vx", "base.vy", "base.wz"])
         return tuple(names)
+
+    @property
+    def action_feature_names(self) -> tuple[str, ...]:
+        if self._policy_feature_map is not None:
+            return tuple(self._policy_feature_map)
+        return self._hardware_action_feature_names
 
     @property
     def observation_features(self) -> dict:
@@ -146,7 +158,7 @@ class OneroH1Robot(Robot):
                 if shape is not None:
                     features[camera_name] = shape
 
-        return features
+        return export_policy_features(features, self._policy_feature_map)
 
     @property
     def action_features(self) -> dict:
@@ -338,7 +350,7 @@ class OneroH1Robot(Robot):
                     shape = self.config.camera_shapes[camera_name]
                     obs[camera_name] = np.zeros(shape, dtype=np.uint8)
 
-        return obs
+        return export_policy_features(obs, self._policy_feature_map)
 
     def _arm_positions_from_action(
         self,
@@ -482,6 +494,7 @@ class OneroH1Robot(Robot):
     def send_action(self, action: RobotAction) -> RobotAction:
         client = self._require_connected()
         normalized = normalize_action_dict(dict(action), self.action_feature_names)
+        normalized = policy_action_to_hardware(normalized, self._policy_feature_map)
         snap = client.snapshot(include_images=False)
         observation = self._scalar_observation_from_snapshot(snap)
 
@@ -502,7 +515,7 @@ class OneroH1Robot(Robot):
             clipped = self._limiter.clip_action(normalized, observation)
 
         if not self.config.send_action:
-            return clipped
+            return export_policy_features(clipped, self._policy_feature_map)
 
         left_positions: list[float] | None = None
         left_velocities: list[float] | None = None
@@ -549,7 +562,7 @@ class OneroH1Robot(Robot):
                 clipped.get("base.wz", 0.0),
             )
 
-        return clipped
+        return export_policy_features(clipped, self._policy_feature_map)
 
     def disconnect(self) -> None:
         if self.client is not None:
