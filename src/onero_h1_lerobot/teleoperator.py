@@ -10,6 +10,7 @@ from typing import Any
 
 from .compat import RobotAction, Teleoperator, TeleoperatorConfig
 from .config import DEFAULT_LEFT_ARM_JOINTS, DEFAULT_RIGHT_ARM_JOINTS
+from .feature_layout import export_policy_features, make_policy_feature_map
 from .ros_client import _import_ros
 from .utils import now_monotonic
 
@@ -63,6 +64,7 @@ class OneroH1RosJointTeleopConfig(TeleoperatorConfig):
 
     # Action diff — frame-to-frame action position delta (computed locally)
     use_action_diff: bool = True
+    policy_feature_layout: str = "native"
 
     left_arm_joint_names: tuple[str, ...] = DEFAULT_LEFT_ARM_JOINTS
     right_arm_joint_names: tuple[str, ...] = DEFAULT_RIGHT_ARM_JOINTS
@@ -144,6 +146,7 @@ class OneroH1RosJointTeleop(Teleoperator):
     def __init__(self, config: OneroH1RosJointTeleopConfig):
         super().__init__(config)
         self.config = config
+        self._policy_feature_map = make_policy_feature_map(config)
         self.ros: SimpleNamespace | None = None
         self.node = None
         self.executor = None
@@ -172,7 +175,7 @@ class OneroH1RosJointTeleop(Teleoperator):
         return True
 
     @property
-    def action_feature_names(self) -> tuple[str, ...]:
+    def _hardware_action_feature_names(self) -> tuple[str, ...]:
         names: list[str] = []
         if self.config.use_left_arm:
             names.extend(f"left_arm.{joint}.pos" for joint in self.config.left_arm_joint_names)
@@ -191,6 +194,12 @@ class OneroH1RosJointTeleop(Teleoperator):
         if self.config.use_base_velocity_action:
             names.extend(["base.vx", "base.vy", "base.wz"])
         return tuple(names)
+
+    @property
+    def action_feature_names(self) -> tuple[str, ...]:
+        if self._policy_feature_map is not None:
+            return tuple(self._policy_feature_map)
+        return self._hardware_action_feature_names
 
     @property
     def action_features(self) -> dict:
@@ -538,7 +547,7 @@ class OneroH1RosJointTeleop(Teleoperator):
         now = now_monotonic()
         action, stamps = self._action_snapshot()
 
-        missing = [key for key in self.action_feature_names if key not in action]
+        missing = [key for key in self._hardware_action_feature_names if key not in action]
         stale_sources: list[str] = []
         if self.config.require_fresh_action:
             stale_sources = [
@@ -551,7 +560,7 @@ class OneroH1RosJointTeleop(Teleoperator):
             self._wait_for_first_action(self.config.connect_timeout_s)
             now = now_monotonic()
             action, stamps = self._action_snapshot()
-            missing = [key for key in self.action_feature_names if key not in action]
+            missing = [key for key in self._hardware_action_feature_names if key not in action]
 
         if missing and not self.config.allow_missing_keys:
             raise RuntimeError(
@@ -570,7 +579,8 @@ class OneroH1RosJointTeleop(Teleoperator):
             if stale_sources:
                 raise RuntimeError("Teleop action is stale or unavailable: " + ", ".join(stale_sources))
 
-        result = {key: float(action[key]) for key in self.action_feature_names}
+        result = {key: float(action[key]) for key in self._hardware_action_feature_names}
+        result = export_policy_features(result, self._policy_feature_map)
 
         # Compute action diff (frame-to-frame delta)
         if self.config.use_action_diff:
