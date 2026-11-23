@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "lerobot_robot_onero_h1"
-version = "0.1.0"
+version = "0.2.0"
 description = "LeRobot adapter for the Onero H1 / SwitchBot H1 ROS2 SDK"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -33,7 +33,12 @@ camera = ["opencv-python-headless>=4.9,<4.14"]
 # LeRobot 0.6.1 is the latest non-prerelease release verified on both
 # PyPI and GitHub. Keep this exact pin: this adapter imports LeRobot APIs
 # whose module paths and dataset contracts can change between releases.
-lerobot = ["lerobot[training,hardware,dataset-viz]==0.6.1; python_version >= '3.12'"]
+lerobot = [
+  # `pi` brings transformers, required by the pi0.5 (pi05) policy at rollout.
+  "lerobot[training,hardware,dataset-viz,pi]==0.6.1; python_version >= '3.12'",
+  # LeRobot 0.6.1 需要 scipy>=1.14；旧 scipy 与 numpy 2.x ABI 不兼容。
+  "scipy>=1.14,<2",
+]
 dev = [
   "pytest>=8,<9",
   "ruff>=0.14,<0.15",
