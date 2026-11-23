@@ -281,6 +281,43 @@ left_gripper.pos, right_gripper.pos
 
 Robot and homogeneous teleoperator expose this exact order. Arm velocities and lift are explicit opt-in action channels (`use_arm_velocity_action=True`, `use_lift_action=True`) and should remain disabled for the first dataset. The default policy state has 17 scalars (14 arm positions + 2 grippers + lift), matching LeRobot rollout's hardware feature filter. Effort, diff, gripper-pose, and base observations are opt-in and must be configured identically during training and deployment.
 
+### Checkpoint feature layouts
+
+The default `policy_feature_layout=native` keeps the existing feature names and
+order unchanged. For a 16-channel checkpoint trained in arm/gripper order, use
+`--robot.policy_feature_layout=interleaved --robot.use_lift=false`:
+
+```text
+left_joint_1.pos ... left_joint_7.pos, left_gripper.pos,
+right_joint_1.pos ... right_joint_7.pos, right_gripper.pos
+```
+
+The adapter exports observations in that order and maps policy actions back to
+the corresponding ROS joints and grippers. ROS topic names, joint units, control
+messages and existing limit settings are unchanged. This is a fixed position-only
+layout: both 7-joint arms and grippers must be enabled, with lift, head, velocity
+channels and extra scalar observations disabled.
+
+Use the same layout on both devices when collecting training data:
+
+```bash
+lerobot-record \
+  --robot.type=onero_h1 \
+  --robot.policy_feature_layout=interleaved \
+  --robot.use_lift=false \
+  --robot.send_action=false \
+  --teleop.type=onero_h1_ros_joint \
+  --teleop.policy_feature_layout=interleaved \
+  --dataset.repo_id=your_name/a1_cloth \
+  --dataset.single_task="Fold the cloth" \
+  --dataset.push_to_hub=false
+```
+
+Start with `lerobot-rollout --robot.policy_feature_layout=interleaved
+--robot.use_lift=false --robot.send_action=false ...` and check the complete
+checkpoint feature contract before enabling action publishing. The layout is
+implemented in this adapter; upstream LeRobot 0.6.1 is not patched.
+
 ### Policy rollout
 
 Install the PyTorch build appropriate for the target platform by following the official PyTorch or hardware-vendor instructions, then install this package with its pinned LeRobot dependency. The repository does not bundle platform-specific CUDA wheels or modify LeRobot sources.
