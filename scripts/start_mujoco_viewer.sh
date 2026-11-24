@@ -5,7 +5,7 @@ set -eo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 RUN_DIR="$(dirname "$PROJECT_DIR")/run"
-MODEL="$PROJECT_DIR/urdf/urdf/X1_mjcf_with_grippers.urdf"
+MODEL="$PROJECT_DIR/urdf/urdf/H1_mjcf_with_grippers.urdf"
 mkdir -p "$RUN_DIR"
 
 if [ -f "$RUN_DIR/h1-sim.pid" ]; then

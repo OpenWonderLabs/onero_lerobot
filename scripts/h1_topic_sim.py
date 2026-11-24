@@ -31,7 +31,7 @@ RIGHT_JOINTS = tuple(f"joint{i}-r" for i in range(1, 8))
 HEAD_JOINTS = ("head_pitch_joint", "head_yaw_joint")
 LIFT_JOINT = "lift_joint"
 
-# ROS API names differ from the canonical BeaVR X1/H1 URDF names.
+# ROS API names differ from the canonical BeaVR-derived H1 URDF names.
 MJ_JOINT_NAMES = {
     **{name: f"l{i}" for i, name in enumerate(LEFT_JOINTS, 1)},
     **{name: f"r{i}" for i, name in enumerate(RIGHT_JOINTS, 1)},
@@ -44,7 +44,7 @@ MJ_GRIPPER_JOINT_NAMES = {
     "right": ("right_fake_gripper_left_joint", "right_fake_gripper_right_joint"),
 }
 FAKE_GRIPPER_MAX_OPENING_M = 0.022
-# The SDK reports lift height, while the X1 URDF models a downward slide from
+# The SDK reports lift height, while the H1 URDF models a downward slide from
 # its fully raised pose (sj=0). This offset maps 1.30 m -> 0 and 0.45 m -> -0.85.
 URDF_LIFT_HEIGHT_OFFSET_M = 1.30
 
@@ -275,7 +275,7 @@ class H1TopicSimulator(Node):
         s.base_yaw += s.base_wz * dt
 
     def _write_urdf_pose(self) -> None:
-        """Write protocol state into the actuator-free canonical X1 URDF."""
+        """Write protocol state into the actuator-free canonical H1 URDF."""
         assert self._mj_model is not None and self._mj_data is not None
         s = self.state
         for name, value in zip(LEFT_JOINTS, s.left, strict=True):
@@ -309,7 +309,7 @@ class H1TopicSimulator(Node):
         s.base_y += s.base_vy * dt
         s.base_yaw += s.base_wz * dt
 
-        # X1_mjcf.urdf is the canonical visual/kinematic model used by BeaVR.
+        # H1_mjcf.urdf is the canonical visual/kinematic model used by BeaVR.
         # It intentionally has no actuators, so drive qpos and run forward
         # kinematics instead of inventing arm dynamics or actuator gains.
         self._write_urdf_pose()

@@ -1,28 +1,32 @@
-# Onero H1 / X1 robot model
+# Onero H1 robot model
 
-This directory is copied verbatim from the BeaVR deployment model at:
+This directory is derived from the BeaVR X1 deployment model at:
 
 ```text
 beavr-teleop/deploy/urdf/
 ```
 
-Canonical BeaVR MuJoCo-loadable model:
+Files are named H1 to match this project. The source robot name and ROS
+package URI (`X1_URDF_V1_2`) are retained for upstream compatibility;
+joint names, geometry and mesh filenames are unchanged.
+
+Canonical BeaVR-derived MuJoCo-loadable model:
 
 ```text
-urdf/X1_mjcf.urdf
+urdf/H1_mjcf.urdf
 ```
 
 Simulator model with simple visual grippers added by this project:
 
 ```text
-urdf/X1_mjcf_with_grippers.urdf
+urdf/H1_mjcf_with_grippers.urdf
 ```
 
 The derived model leaves every BeaVR link and joint unchanged. It adds a fixed
 palm and two opposing prismatic fingers to each `Link_l7` / `Link_r7` wrist.
 Each normalized gripper command drives both fingers from 0 to 22 mm.
 
-The only difference between `X1_mjcf.urdf` and `X1_URDF_V1_2.urdf` is mesh
+The only difference between `H1_mjcf.urdf` and `H1_URDF_V1_2.urdf` is mesh
 path syntax: the MuJoCo variant uses relative `../meshes/*.STL` paths instead
 of ROS `package://X1_URDF_V1_2/meshes/*.STL` paths.
 
