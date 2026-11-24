@@ -42,6 +42,36 @@ def _quaternion_to_euler(x: float, y: float, z: float, w: float) -> tuple[float,
     return roll, pitch, yaw
 
 
+def init_rclpy(ros: SimpleNamespace) -> bool:
+    """Initialize rclpy so Ctrl+C can still run our cleanup code.
+
+    rclpy's default SIGINT handler shuts the context down immediately, which
+    breaks cleanup (stopping the leader process, closing ROS handles). Removing
+    the handler lets Python raise ``KeyboardInterrupt`` and keeps the context
+    alive until ``disconnect()`` calls ``rclpy.shutdown()``.
+
+    Returns True when this call initialized rclpy.
+    """
+    if ros.rclpy.ok():
+        return False
+
+    try:
+        from rclpy.signals import SignalHandlerOptions
+
+        ros.rclpy.init(args=None, signal_handler_options=SignalHandlerOptions.NO)
+    except (ImportError, TypeError):
+        ros.rclpy.init(args=None)
+
+    if threading.current_thread() is threading.main_thread():
+        try:
+            from rclpy.signals import uninstall_signal_handlers
+
+            uninstall_signal_handlers()
+        except Exception:
+            pass
+    return True
+
+
 def _import_ros() -> SimpleNamespace:
     """Import ROS2 modules lazily so the package remains importable off-robot."""
 
@@ -162,9 +192,8 @@ class H1RosClient:
             return
 
         self.ros = _import_ros()
-        if self.config.auto_init_rclpy and not self.ros.rclpy.ok():
-            self.ros.rclpy.init(args=None)
-            self._owns_rclpy = True
+        if self.config.auto_init_rclpy:
+            self._owns_rclpy = init_rclpy(self.ros)
 
         namespace = self.config.ros_namespace or None
         self.node = self.ros.rclpy.create_node(self.config.ros_node_name, namespace=namespace)
@@ -704,14 +733,14 @@ class H1RosClient:
         self,
         value: int,
         wait_s: float = 5.0,
-        repeats: int = 5,
+        repeats: int = 1,
     ) -> None:
         """Publish a teleop state handshake value on the mode topic.
 
-        ``/joystick_info`` is also used for gripper commands (100-299); values
-        20/21 are the enter/exit teleop handshake understood by both arms.
-        The message is repeated briefly because a single ROS publication can be
-        lost before discovery completes.
+        ``/joystick_info`` is also used for gripper commands (100-299); value
+        ``20`` is the enter-teleop handshake understood by both arms.
+        Publishing the handshake several times makes the leader arm re-run its
+        enter action, so a single message is the default.
         """
         if self._pub_teleop_mode is None or self.ros is None:
             return

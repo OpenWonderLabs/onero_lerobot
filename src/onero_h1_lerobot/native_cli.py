@@ -4,10 +4,10 @@ LeRobot imports the ``lerobot_robot_onero_h1`` plugin at CLI startup, before it
 parses arguments. That lets native commands pick up exactly the same robot-side
 defaults as the wrapper commands:
 
-- teleoperate: leader arm in teleop mode (remapped), 20/21 handshake, active control
+- teleoperate: leader arm in teleop mode (remapped), 20 handshake, active control
 - record: active control by default, passive only with an explicit
   ``--robot.send_action=false``
-- rollout: leader arm remapped, 20/21 handshake, policy actions sent to the robot
+- rollout: leader arm remapped, 20 handshake, policy actions sent to the robot
 - train: no robot involved, so nothing to configure
 """
 

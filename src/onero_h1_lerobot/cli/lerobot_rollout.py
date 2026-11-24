@@ -22,8 +22,9 @@ def main() -> None:
     try:
         lerobot_rollout_main()
     except KeyboardInterrupt:
-        # LeRobot's rollout teardown disconnects the robot, which sends the 21
-        # handshake and returns the arms home. Catching here avoids a traceback.
+        # LeRobot's rollout teardown disconnects the robot; the adapter keeps
+        # the current pose (no 21) and stops the leader process. Catching here
+        # avoids a traceback.
         pass
 
 

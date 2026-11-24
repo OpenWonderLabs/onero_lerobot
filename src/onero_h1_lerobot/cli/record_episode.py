@@ -231,11 +231,6 @@ def parse_args() -> argparse.Namespace:
         help="Do not publish gripper commands to /joystick_info.",
     )
     parser.add_argument(
-        "--no-confirm",
-        action="store_true",
-        help="Skip the 'press Enter to start teleop' confirmation prompt",
-    )
-    parser.add_argument(
         "--control-hz",
         type=float,
         default=None,
@@ -271,7 +266,6 @@ def main() -> None:
         # Active control is the default; passive recording starts the leader
         # normally without remapping its command topic.
         arm_node_mode="record" if args.passive else "teleop",
-        teleop_confirm=not args.no_confirm,
         # onero_leader gripper behavior: publish Int32 commands by default.
         send_gripper_action=not args.no_gripper_action,
     )
@@ -377,13 +371,13 @@ def main() -> None:
     )
 
     with robot:
-        # Send the teleop handshake (20) and wait for the operator to confirm
-        # before the recording/control loop starts.
-        robot.enter_teleop_mode(confirm=not args.no_confirm)
+        # Send the teleop handshake (20); enter_teleop_mode() waits briefly for
+        # the arms to settle before the recording/control loop starts.
+        robot.enter_teleop_mode()
         # Stop subscriber must be created after rclpy.init() (called by robot.connect())
         _start_stop_subscriber(args.stop_topic, stop_event, _logger)
-        # Ctrl+C is handled here (after the Enter prompt) so the first press
-        # behaves exactly like publishing True to the stop topic.
+        # Ctrl+C is handled here so the first press behaves exactly like
+        # publishing True to the stop topic.
         previous_sigint = _install_stop_on_sigint(stop_event)
 
         with teleop:

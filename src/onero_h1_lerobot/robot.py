@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import sys
 import time
 from typing import Any
 
@@ -12,6 +11,11 @@ import numpy as np
 from .arm_node import ArmNodeLauncher, resolve_remaps
 from .compat import Robot, RobotAction, RobotObservation
 from .config import OneroH1Config
+from .feature_layout import (
+    export_policy_features,
+    make_policy_feature_map,
+    policy_action_to_hardware,
+)
 from .ros_client import H1RosClient
 from .safety import ActionLimiter
 from .utils import normalize_action_dict, now_monotonic
@@ -32,6 +36,7 @@ class OneroH1Robot(Robot):
     def __init__(self, config: OneroH1Config):
         super().__init__(config)
         self.config = config
+        self._policy_feature_map = make_policy_feature_map(config)
         self.client: H1RosClient | None = None
         self._limiter = ActionLimiter(config)
         self._arm_node_launcher: ArmNodeLauncher | None = None
@@ -67,24 +72,7 @@ class OneroH1Robot(Robot):
 
     @property
     def action_feature_names(self) -> tuple[str, ...]:
-        names: list[str] = []
-        if self.config.use_left_arm:
-            names.extend(f"left_arm.{joint}.pos" for joint in self.config.left_arm_joint_names)
-            if self.config.use_arm_velocity_action:
-                names.extend(f"left_arm.{joint}.vel" for joint in self.config.left_arm_joint_names)
-        if self.config.use_right_arm:
-            names.extend(f"right_arm.{joint}.pos" for joint in self.config.right_arm_joint_names)
-            if self.config.use_arm_velocity_action:
-                names.extend(f"right_arm.{joint}.vel" for joint in self.config.right_arm_joint_names)
-        if self.config.use_gripper:
-            names.extend(["left_gripper.pos", "right_gripper.pos"])
-        if self.config.use_lift and self.config.use_lift_action:
-            names.append("lift.pos")
-        if self.config.use_head:
-            names.extend(["head.pitch.pos", "head.yaw.pos"])
-        if self.config.use_base_velocity_action:
-            names.extend(["base.vx", "base.vy", "base.wz"])
-        return tuple(names)
+        return tuple(self._policy_feature_map)
 
     @property
     def observation_features(self) -> dict:
@@ -151,7 +139,7 @@ class OneroH1Robot(Robot):
                 if shape is not None:
                     features[camera_name] = shape
 
-        return features
+        return export_policy_features(features, self._policy_feature_map)
 
     @property
     def action_features(self) -> dict:
@@ -358,7 +346,7 @@ class OneroH1Robot(Robot):
                     shape = self.config.camera_shapes[camera_name]
                     obs[camera_name] = np.zeros(shape, dtype=np.uint8)
 
-        return obs
+        return export_policy_features(obs, self._policy_feature_map)
 
     def _arm_positions_from_action(
         self,
@@ -502,6 +490,9 @@ class OneroH1Robot(Robot):
     def send_action(self, action: RobotAction) -> RobotAction:
         client = self._require_connected()
         normalized = normalize_action_dict(dict(action), self.action_feature_names)
+        # Teleop may attach frame-to-frame ``.diff`` metrics; they are not commands.
+        normalized = {key: value for key, value in normalized.items() if not key.endswith(".diff")}
+        normalized = policy_action_to_hardware(normalized, self._policy_feature_map)
         snap = client.snapshot(include_images=False)
         observation = self._scalar_observation_from_snapshot(snap)
 
@@ -522,7 +513,7 @@ class OneroH1Robot(Robot):
             clipped = self._limiter.clip_action(normalized, observation)
 
         if not self.config.send_action:
-            return clipped
+            return export_policy_features(clipped, self._policy_feature_map)
 
         left_positions: list[float] | None = None
         left_velocities: list[float] | None = None
@@ -569,63 +560,61 @@ class OneroH1Robot(Robot):
                 clipped.get("base.wz", 0.0),
             )
 
-        return clipped
+        return export_policy_features(clipped, self._policy_feature_map)
 
-    def enter_teleop_mode(self, confirm: bool | None = None) -> None:
-        """Put both arms into teleop state and optionally wait for confirmation.
+    def enter_teleop_mode(self) -> None:
+        """Put both arms into teleop state and wait for them to settle.
 
-        The ``20`` handshake is published on ``/joystick_info``. For interactive
-        terminals the call then blocks until the operator presses Enter, so the
-        arms stay still while the user gets ready.
+        The ``20`` handshake is published on ``/joystick_info``; a short delay
+        then gives the arms time to enter teleop mode before the control loop
+        starts, matching LeRobot's non-interactive startup.
         """
         if self._teleop_mode_active:
             return
         client = self._require_connected()
         self._teleop_mode_active = True
+        launcher = self._arm_node_launcher
+        leader_started = launcher is not None and launcher.started
+        log_offset = launcher.log_offset() if leader_started else 0
         try:
-            client.publish_teleop_mode(self.config.teleop_mode_enter_value)
+            client.publish_teleop_mode(
+                self.config.teleop_mode_enter_value,
+                wait_s=10.0,
+                # One handshake only: repeating it makes the leader arm
+                # re-run the enter action and visibly shake.
+                repeats=1,
+            )
+            if (
+                leader_started
+                and launcher.log_available
+                and not launcher.wait_for_log_markers(("joystick_info:20 ",), log_offset, 2.0)
+            ):
+                _logger.warning("主臂未确认收到遥操指令 20，重试一次")
+                client.publish_teleop_mode(
+                    self.config.teleop_mode_enter_value,
+                    wait_s=2.0,
+                    repeats=1,
+                )
         except BaseException:
             self.exit_teleop_mode()
             raise
 
-        should_confirm = self.config.teleop_confirm if confirm is None else confirm
-        if not should_confirm:
-            return
-        if not sys.stdin.isatty():
-            _logger.info("非交互终端，跳过遥操确认提示")
-            return
-
-        try:
-            input("请确认机械臂已进入遥操模式，按 Enter 开始数采或遥操...")
-        except (EOFError, KeyboardInterrupt):
-            self.exit_teleop_mode()
-            raise
+        ready_delay = max(self.config.teleop_ready_delay_s, 0.0)
+        if ready_delay > 0:
+            _logger.info("已发送遥操指令 20，等待 %.1f 秒后开始控制", ready_delay)
+            time.sleep(ready_delay)
 
     def exit_teleop_mode(self) -> None:
-        """Publish the ``21`` handshake and wait for the arms to return home."""
+        """Leave teleop mode without moving the arms.
+
+        No ``21`` handshake is sent: the leader/follower stay where they are,
+        so a workspace over a table is never swept by a "back" motion. The
+        next ``20`` re-enters teleop from the same pose.
+        """
         if not self._teleop_mode_active:
             return
         self._teleop_mode_active = False
-        client = self.client
-        if client is None:
-            return
-
-        try:
-            client.publish_teleop_mode(
-                self.config.teleop_mode_exit_value,
-                wait_s=2.0,
-            )
-        except Exception:
-            _logger.warning("发送退出遥操指令失败", exc_info=True)
-        delay = max(0.0, float(self.config.teleop_exit_delay_s))
-        if delay > 0:
-            _logger.info("等待机械臂回到初始姿态（%.1fs）...", delay)
-            try:
-                time.sleep(delay)
-            except KeyboardInterrupt:
-                # A second Ctrl+C during shutdown should still leave the
-                # remaining cleanup (client/node/leader arm node) to run.
-                _logger.warning("退出等待被中断，机械臂可能尚未完全回到初始姿态")
+        _logger.info("退出遥操：保持当前位置，不发送 21、不回位")
 
     def disconnect(self) -> None:
         try:

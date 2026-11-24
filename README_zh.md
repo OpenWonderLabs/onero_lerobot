@@ -143,7 +143,10 @@ onero-h1-safe-test-action --head-yaw 0.05 --dry-run
 - **主动控制**（默认）：remap 主臂的 `/record_data`，避免与 LeRobot 的控制指令冲突。
 - 主臂启动后自动发送 `/joystick_info` 的 `20` 进入遥操状态，终端暂停并提示
   “请确认机械臂已进入遥操模式，按 Enter 开始数采或遥操...”。
-- 录制结束或退出遥操时发送 `21` 让两臂回到初始姿态，等待 5 秒后退出。
+- 主臂输出默认写入 `~/.cache/onero_h1/arm_record_node.log`，不污染终端；
+  设置 `ONERO_H1_ARM_NODE_LOG=1` 可显示到终端。
+- 录制结束或退出遥操时发送 `21` 让两臂回到初始姿态；LeRobot 会检测主臂关节是否
+  停止运动，确认 back 完成后再关闭主臂程序（最长等待 30 秒）。
 - 自动化/无终端场景可加 `--no-confirm`，或设置
   `ONERO_H1_TELEOP_CONFIRM=0` 跳过 Enter 提示。
 

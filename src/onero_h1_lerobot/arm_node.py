@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import shutil
 import subprocess
 import time
@@ -19,8 +20,8 @@ def resolve_remaps(mode: str) -> list[tuple[str, str]]:
 
     In ``teleop`` mode the leader must not publish ``/record_data`` while
     LeRobot's control loop is also publishing it, so that output is redirected.
-    ``/joystick_info`` is intentionally not remapped: it carries the 20/21 mode
-    handshake and the gripper command chain.
+    ``/joystick_info`` is intentionally not remapped: it carries the ``20``
+    teleop handshake and the gripper command chain.
     """
     if mode == "teleop":
         return [("/record_data", "/leader/arm_data")]
@@ -43,6 +44,66 @@ class ArmNodeLauncher:
         self._remaps = remaps or []
         self._process: subprocess.Popen | None = None
         self._started_by_us = False
+        self._log_path: Path | None = None
+        self._log_file = None
+
+    def _close_log(self) -> None:
+        if self._log_file is not None:
+            try:
+                self._log_file.close()
+            except OSError:
+                pass
+            self._log_file = None
+
+    @property
+    def started(self) -> bool:
+        return self._started_by_us
+
+    @property
+    def log_available(self) -> bool:
+        return self._log_path is not None
+
+    def log_offset(self) -> int:
+        """Current size of the leader log, used as a scan start point."""
+        if self._log_path is None:
+            return 0
+        try:
+            return self._log_path.stat().st_size
+        except OSError:
+            return 0
+
+    def wait_for_log_markers(
+        self,
+        markers: tuple[str, ...],
+        start_offset: int,
+        timeout_s: float,
+    ) -> bool:
+        """Wait for all ``markers`` to appear in the leader log.
+
+        Used to confirm the ``20`` handshake (``joystick_info:20``) before the
+        control loop starts.
+        """
+        if self._log_path is None:
+            return False
+        deadline = time.monotonic() + timeout_s
+        found: set[str] = set()
+        while True:
+            try:
+                with self._log_path.open("rb") as handle:
+                    handle.seek(start_offset)
+                    data = handle.read().decode("utf-8", "ignore")
+            except OSError:
+                data = ""
+            for marker in markers:
+                if marker in data:
+                    found.add(marker)
+            if len(found) == len(markers):
+                return True
+            if time.monotonic() >= deadline:
+                return False
+            if self._process is not None and self._process.poll() is not None:
+                return False
+            time.sleep(0.1)
 
     def is_running(self) -> bool:
         try:
@@ -88,11 +149,47 @@ class ArmNodeLauncher:
                 command.extend(["-r", f"{source}:={target}"])
 
         _logger.info("自动启动主臂程序: %s", " ".join(command))
+
+        # 主臂程序日志很多，默认写入文件，避免污染 LeRobot 终端输出。
+        stdout = None
+        stderr = None
+        if os.environ.get("ONERO_H1_ARM_NODE_LOG", "").strip().lower() not in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }:
+            try:
+                log_dir = Path.home() / ".cache" / "onero_h1"
+                log_dir.mkdir(parents=True, exist_ok=True)
+                self._log_path = log_dir / "arm_record_node.log"
+                self._log_file = self._log_path.open("wb")
+                stdout = self._log_file
+                stderr = subprocess.STDOUT
+                _logger.info(
+                    "主臂输出已隐藏，日志写入 %s（ONERO_H1_ARM_NODE_LOG=1 可显示到终端）",
+                    self._log_path,
+                )
+            except OSError as exc:
+                _logger.warning("无法创建主臂日志文件，输出将被丢弃: %s", exc)
+                stdout = subprocess.DEVNULL
+                stderr = subprocess.DEVNULL
+
         try:
-            self._process = subprocess.Popen(command, stdin=subprocess.DEVNULL)
+            # New session: terminal Ctrl+C only goes to the foreground process
+            # group, so the leader arm keeps running while teleop/recording is
+            # active. Its lifetime is managed by ``stop()``.
+            self._process = subprocess.Popen(
+                command,
+                stdin=subprocess.DEVNULL,
+                stdout=stdout,
+                stderr=stderr,
+                start_new_session=True,
+            )
         except OSError as exc:
             _logger.warning("主臂程序启动失败: %s", exc)
             self._process = None
+            self._close_log()
             return False
 
         # 快速确认进程没有立即退出
@@ -101,6 +198,7 @@ class ArmNodeLauncher:
             if self._process.poll() is not None:
                 _logger.warning("主臂程序启动后立即退出 (code=%s)", self._process.returncode)
                 self._process = None
+                self._close_log()
                 return False
             time.sleep(0.1)
 
@@ -119,3 +217,4 @@ class ArmNodeLauncher:
             self._process.wait()
         self._process = None
         self._started_by_us = False
+        self._close_log()

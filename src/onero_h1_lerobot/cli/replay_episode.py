@@ -51,11 +51,6 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--no-cameras", action="store_true", help="Disable camera features")
     parser.add_argument("--cameras", default="head,left,right", help="Comma-separated camera names")
-    parser.add_argument(
-        "--no-confirm",
-        action="store_true",
-        help="Skip the Enter prompt after entering teleop mode.",
-    )
     return parser.parse_args()
 
 
@@ -80,7 +75,6 @@ def main() -> None:
         # Replay drives the follower itself; never start the leader arm.
         auto_start_arm_node=False,
         auto_enter_teleop=True,
-        teleop_confirm=not args.no_confirm,
         teleop_mode_control=True,
     )
     robot = OneroH1Robot(config)

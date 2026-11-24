@@ -71,17 +71,15 @@ class OneroH1Config(RobotConfig):
         default_factory=lambda: os.environ.get("ONERO_H1_ARM_NODE_MODE", "record")
     )
 
-    # Teleop state handshake on /joystick_info: 20 = enter teleop, 21 = back to
-    # the initial pose. The same topic also carries gripper commands (100-299).
+    # Teleop state handshake on /joystick_info: 20 = enter teleop. Exit does not
+    # send a "back" command, so the arms keep their current pose.
+    # The same topic also carries gripper commands (100-299).
     teleop_mode_control: bool = True
     teleop_mode_topic: str = "/joystick_info"
     teleop_mode_enter_value: int = 20
-    teleop_mode_exit_value: int = 21
-    teleop_exit_delay_s: float = 5.0
-    teleop_confirm: bool = field(
-        default_factory=lambda: os.environ.get("ONERO_H1_TELEOP_CONFIRM", "1").lower()
-        not in ("0", "false", "no")
-    )
+    # Seconds to wait after the ``20`` handshake before the control loop starts,
+    # giving the arms time to enter teleop mode (replaces the old Enter prompt).
+    teleop_ready_delay_s: float = 3.0
     auto_enter_teleop: bool = field(
         default_factory=lambda: os.environ.get("ONERO_H1_AUTO_TELEOP", "0").lower()
         in ("1", "true", "yes")
@@ -90,14 +88,13 @@ class OneroH1Config(RobotConfig):
     # Robot modules included in observations/actions
     use_left_arm: bool = True
     use_right_arm: bool = True
-    # Canonical v1 policy action schema: 14 arm positions + 2 grippers.
-    # Velocities and lift remain available as explicit opt-in action channels.
+    # Canonical policy schema: 14 arm positions + 2 grippers (16 scalars),
+    # ordered left joints 1..7, left gripper, right joints 1..7, right gripper.
+    # Extra channels (velocity, lift, head, base) are rejected by feature_layout.
     use_arm_velocity_action: bool = False
-    use_lift: bool = True
+    use_lift: bool = False
     use_lift_action: bool = False
     use_head: bool = False
-    # Keep the default policy-facing state compatible with LeRobot rollout:
-    # 14 arm positions + 2 grippers + lift = 17 scalar values.
     use_base_observation: bool = False
     use_base_velocity_action: bool = False
     use_battery_observation: bool = False
