@@ -130,7 +130,8 @@ class ArmNodeLauncher:
 
         executable = shutil.which(self._executable)
         if executable is None:
-            fallback = Path("/usr/local/bin") / self._executable
+            # 部署脚本把入口装在 ~/.local/bin。
+            fallback = Path.home() / ".local" / "bin" / self._executable
             if fallback.is_file():
                 executable = str(fallback)
             else:
