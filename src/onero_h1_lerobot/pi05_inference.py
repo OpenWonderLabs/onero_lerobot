@@ -79,8 +79,10 @@ def verify_loaded_pi05_weights(policy: Any, checkpoint: Path) -> dict[str, int]:
 
     Upstream PI05.from_pretrained can catch load errors and return its freshly
     initialized model. Checking only the file or the returned key count cannot
-    detect that case. Stream saved tensors through the native key-fixup hook,
-    then compare their values after the same dtype conversion as load_state_dict.
+    detect that case. Resolve the native key-fixup over the complete key set,
+    then stream tensor comparisons after load_state_dict's dtype conversion.
+    The native hook copies lm_head into embed_tokens; a later checkpoint key
+    can overwrite that copy, so mapping tensors independently is incorrect.
     """
     import torch
     from safetensors import safe_open
@@ -91,24 +93,42 @@ def verify_loaded_pi05_weights(policy: Any, checkpoint: Path) -> dict[str, int]:
     seen: set[str] = set()
     source_count = 0
     with safe_open(path, framework="pt", device="cpu") as archive:
-        for source_name in archive.keys():
+        source_names = list(archive.keys())
+        # The pinned 0.6.1 hook only renames, drops or clones tensors. Scalar
+        # source markers preserve its full-dictionary overwrite semantics
+        # without retaining another complete multi-GB state dict in RAM.
+        markers = {name: torch.tensor(index) for index, name in enumerate(source_names)}
+        fixed = policy._fix_pytorch_state_dict_keys(markers, policy.config)
+        targets: dict[str, str] = {}
+        represented: set[str] = set()
+        for name, marker in fixed.items():
+            if marker.shape != () or marker.dtype != torch.int64:
+                raise ValueError("Unsupported native PI05 tensor transformation")
+            index = marker.item()
+            if not 0 <= index < len(source_names):
+                raise ValueError("Invalid native PI05 source mapping")
+            source_name = source_names[index]
+            represented.add(source_name)
+            key = name if name.startswith("model.") else f"model.{name}"
+            if key not in actual:
+                raise ValueError(f"Checkpoint key does not map to one policy tensor: {name}")
+            targets[key] = source_name
+        if represented != set(source_names):
+            raise ValueError("Native PI05 key mapping discarded checkpoint tensors")
+        source_targets: dict[str, list[str]] = {}
+        for key, source_name in targets.items():
+            source_targets.setdefault(source_name, []).append(key)
+        for source_name in source_names:
             source_count += 1
             tensor = archive.get_tensor(source_name)
             if not torch.isfinite(tensor).all().item():
                 raise ValueError(f"Checkpoint tensor is non-finite: {source_name}")
-            fixed = policy._fix_pytorch_state_dict_keys({source_name: tensor}, policy.config)
-            if not fixed:
-                raise ValueError(f"Native PI05 key mapping discarded {source_name}")
-            for name, expected in fixed.items():
-                candidates = [key for key in (name, f"model.{name}") if key in actual]
-                if len(candidates) != 1:
-                    raise ValueError(f"Checkpoint key does not map to one policy tensor: {name}")
-                key = candidates[0]
+            for key in source_targets.get(source_name, ()):
                 loaded = actual[key].detach().cpu()
                 if (
                     not torch.isfinite(loaded).all().item()
-                    or loaded.shape != expected.shape
-                    or not torch.equal(loaded, expected.to(dtype=loaded.dtype))
+                    or loaded.shape != tensor.shape
+                    or not torch.equal(loaded, tensor.to(dtype=loaded.dtype))
                 ):
                     raise ValueError(f"Loaded PI05 tensor does not match checkpoint: {key}")
                 seen.add(key)

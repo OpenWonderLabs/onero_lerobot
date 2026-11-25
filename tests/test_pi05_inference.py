@@ -142,3 +142,50 @@ def test_corrupt_checkpoint_is_rejected(tmp_path, fault):
     save_file(tensors, tmp_path / "model.safetensors")
     with pytest.raises(ValueError):
         verify_loaded_pi05_weights(policy, tmp_path)
+
+
+def embedding_policy(tmp_path, prefixed):
+    policy = SmallPolicy()
+    policy.model = torch.nn.Module()
+    vlm = torch.nn.Module()
+    vlm.model = torch.nn.Module()
+    vlm.model.language_model = torch.nn.Module()
+    vlm.model.language_model.embed_tokens = torch.nn.Embedding(3, 2)
+    vlm.lm_head = torch.nn.Linear(2, 3, bias=False)
+    policy.model.paligemma_with_expert = torch.nn.Module()
+    policy.model.paligemma_with_expert.paligemma = vlm
+    prefix = "model." if prefixed else ""
+    tensors = {
+        f"{prefix}paligemma_with_expert.paligemma.lm_head.weight": torch.full((3, 2), 3.0),
+        f"{prefix}paligemma_with_expert.paligemma.model.language_model.embed_tokens.weight": torch.full((3, 2), 7.0),
+    }
+    save_file(tensors, tmp_path / "model.safetensors")
+    # Use exactly the full-dictionary fixup + prefix pass from native loading.
+    from safetensors.torch import load_file
+    fixed = policy._fix_pytorch_state_dict_keys(load_file(tmp_path / "model.safetensors"), policy.config)
+    policy.load_state_dict({
+        name if name.startswith("model.") else f"model.{name}": value
+        for name, value in fixed.items()
+    })
+    return policy, vlm
+
+
+@pytest.mark.parametrize("prefixed", [False, True])
+def test_native_embedding_overwrite_uses_complete_checkpoint_context(tmp_path, prefixed):
+    policy, vlm = embedding_policy(tmp_path, prefixed)
+    assert torch.all(vlm.model.language_model.embed_tokens.weight == 7)
+    assert torch.all(vlm.lm_head.weight == 3)
+    assert verify_loaded_pi05_weights(policy, tmp_path) == {
+        "source_tensors": 2, "verified_policy_tensors": 2,
+    }
+
+
+@pytest.mark.parametrize("prefixed", [False, True])
+@pytest.mark.parametrize("target", ["embedding", "head"])
+def test_complete_mapping_still_rejects_wrong_embedding_or_head(tmp_path, prefixed, target):
+    policy, vlm = embedding_policy(tmp_path, prefixed)
+    parameter = vlm.lm_head.weight if target == "head" else vlm.model.language_model.embed_tokens.weight
+    with torch.no_grad():
+        parameter.add_(1)
+    with pytest.raises(ValueError, match="does not match checkpoint"):
+        verify_loaded_pi05_weights(policy, tmp_path)
