@@ -5,7 +5,6 @@ LeRobot's plugin loader imports installed distributions whose names start with
 """
 
 from onero_h1_lerobot import *  # noqa: F403
-
 from onero_h1_lerobot.native_cli import configure_for_command
 from onero_h1_lerobot.record_guard import install_native_record_guard
 

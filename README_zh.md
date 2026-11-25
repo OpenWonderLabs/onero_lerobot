@@ -307,17 +307,54 @@ onero-h1-lerobot-rollout --strategy.type=base --policy.path=/path/to/checkpoint 
 
 ## 特征名称
 
-默认 canonical policy action 固定为 16 维：
+policy state 和 action 均固定为 16 维，顺序如下：
 
 ```text
-left_arm.joint1-l.pos ... left_arm.joint7-l.pos
-right_arm.joint1-r.pos ... right_arm.joint7-r.pos
-left_gripper.pos, right_gripper.pos
+left_joint_1.pos ... left_joint_7.pos, left_gripper.pos,
+right_joint_1.pos ... right_joint_7.pos, right_gripper.pos
 ```
 
-Robot 与同构 Teleoperator 使用完全相同的顺序。速度动作和升降动作必须分别通过
-`use_arm_velocity_action=True`、`use_lift_action=True` 显式开启；第一版训练数据不要开启。
-默认 policy state 为 17 维（双臂位置 14 + 夹爪 2 + 升降 1），与 LeRobot rollout 的硬件特征筛选一致。`.effort`、`.diff`、`.diff_pos` 和底盘观测均可显式开启，但开启后训练与部署必须使用相同配置。
+Robot 与 Teleoperator 使用相同布局。此固定契约要求关闭升降、头部、速度通道
+和额外标量观测。
+
+### 适配模型的特征布局
+
+默认且唯一支持的布局是 `policy_feature_layout=interleaved`。为兼容 SOP 中的命令，
+也可显式设置：
+
+```bash
+--robot.policy_feature_layout=interleaved --robot.use_lift=false
+```
+
+此时观测和动作统一使用以下名称及顺序：
+
+```text
+left_joint_1.pos ... left_joint_7.pos, left_gripper.pos,
+right_joint_1.pos ... right_joint_7.pos, right_gripper.pos
+```
+
+适配器将模型动作映射回对应的 ROS 关节和夹爪。ROS 话题、关节单位、控制报文和
+现有限位设置保持不变。该布局固定为 16 维位置量，要求启用双臂和夹爪，关闭升降、
+头部、速度通道及额外标量观测。
+
+采集同一布局的数据时，机器人与遥操端都要设置：
+
+```bash
+lerobot-record \
+  --robot.type=onero_h1 \
+  --robot.policy_feature_layout=interleaved \
+  --robot.use_lift=false \
+  --robot.send_action=false \
+  --teleop.type=onero_h1_ros_joint \
+  --teleop.policy_feature_layout=interleaved \
+  --dataset.repo_id=your_name/a1_cloth \
+  --dataset.single_task="Fold the cloth" \
+  --dataset.push_to_hub=false
+```
+
+先使用 `lerobot-rollout --robot.policy_feature_layout=interleaved
+--robot.use_lift=false --robot.send_action=false ...` 检查真实观测和模型输出，
+确认完整特征契约后再开启动作发布。修改仅在本适配器内，官方 LeRobot 0.6.1 无需改动。
 
 ### 策略部署
 

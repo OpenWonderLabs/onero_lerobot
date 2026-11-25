@@ -125,6 +125,9 @@ class OneroH1Config(RobotConfig):
     # Action diff (computed locally) — frame-to-frame action position delta
     use_action_diff: bool = True
 
+    # Fixed 16-channel arm/gripper schema; kept explicit for SOP CLI compatibility.
+    policy_feature_layout: str = "interleaved"
+
     # Whether to publish control commands to the robot.
     # Recording enables this by default; use --passive for passive recording.
     send_action: bool = field(

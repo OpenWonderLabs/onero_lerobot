@@ -5,8 +5,8 @@ from types import SimpleNamespace
 import pytest
 
 from onero_h1_lerobot.cli.record_episode import resolve_dataset_target
-from onero_h1_lerobot.native_cli import configure_for_command
 from onero_h1_lerobot.config import OneroH1Config
+from onero_h1_lerobot.native_cli import configure_for_command
 from onero_h1_lerobot.ros_client import H1RosClient
 from onero_h1_lerobot.safety import ActionLimiter
 from onero_h1_lerobot.teleoperator import OneroH1RosJointTeleop, OneroH1RosJointTeleopConfig

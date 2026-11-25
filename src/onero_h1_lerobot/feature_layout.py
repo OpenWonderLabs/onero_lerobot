@@ -17,6 +17,8 @@ T = TypeVar("T")
 
 def make_policy_feature_map(config: Any) -> dict[str, str]:
     """Return ordered policy-name -> hardware-name pairs."""
+    if getattr(config, "policy_feature_layout", "interleaved") != "interleaved":
+        raise ValueError("policy_feature_layout must be 'interleaved'")
     required = ("use_left_arm", "use_right_arm", "use_gripper")
     unsupported = (
         "use_arm_velocity_action", "use_lift", "use_head", "use_base_velocity_action",

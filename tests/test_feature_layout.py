@@ -37,6 +37,7 @@ class Publisher:
 
 def make_robot(*, send_action=False, **kwargs):
     config = OneroH1Config(
+        policy_feature_layout="interleaved",
         use_lift=False,
         use_cameras=False,
         send_action=send_action,
@@ -60,7 +61,9 @@ def make_robot(*, send_action=False, **kwargs):
 
 def test_model_state_action_and_teleop_have_identical_names_and_order():
     robot, _ = make_robot()
-    teleop = OneroH1RosJointTeleop(OneroH1RosJointTeleopConfig())
+    teleop = OneroH1RosJointTeleop(
+        OneroH1RosJointTeleopConfig(policy_feature_layout="interleaved")
+    )
     assert robot.action_feature_names == MODEL_ORDER
     assert teleop.action_feature_names == MODEL_ORDER
     assert tuple(robot.observation_features) == MODEL_ORDER
@@ -100,7 +103,9 @@ def test_unknown_action_names_are_rejected_before_publication():
 
 
 def test_teleop_converts_real_callback_values_to_the_model_order():
-    cfg = OneroH1RosJointTeleopConfig(smooth_arm_actions=False, use_action_diff=False)
+    cfg = OneroH1RosJointTeleopConfig(
+        policy_feature_layout="interleaved", smooth_arm_actions=False, use_action_diff=False
+    )
     teleop = OneroH1RosJointTeleop(cfg)
     teleop._connected = True
     for side, positions in [("left", LEFT), ("right", RIGHT)]:
@@ -116,6 +121,8 @@ def test_teleop_converts_real_callback_values_to_the_model_order():
 @pytest.mark.parametrize(
     "settings",
     [
+        {"policy_feature_layout": "typo"},
+        {"policy_feature_layout": "native"},
         {"use_left_arm": False},
         {"use_right_arm": False},
         {"use_gripper": False},
@@ -131,7 +138,7 @@ def test_teleop_converts_real_callback_values_to_the_model_order():
     "config_type,device_type", [(OneroH1Config, OneroH1Robot), (OneroH1RosJointTeleopConfig, OneroH1RosJointTeleop)]
 )
 def test_invalid_layout_is_rejected_before_connecting(config_type, device_type, settings):
-    options = {"use_lift": False, **settings}
+    options = {"policy_feature_layout": "interleaved", "use_lift": False, **settings}
     with pytest.raises(ValueError):
         device_type(config_type(**options))
 
