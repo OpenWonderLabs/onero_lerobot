@@ -1,5 +1,8 @@
 # lerobot_robot_onero_h1
 
+For native PI0.5 rollout with loaded-weight verification and optional Kalman
+output filtering, see the [LeRobot 0.6.1 guide](docs/native_pi05_inference.md).
+
 LeRobot adapter for the Onero H1 / SwitchBot H1 ROS2 SDK.
 
 This package wraps the ROS2 topics documented in the Onero H1 SDK docs as a standard LeRobot `Robot`:

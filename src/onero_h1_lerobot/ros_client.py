@@ -426,11 +426,14 @@ class H1RosClient:
     def _on_left_gripper_state(self, msg: Any) -> None:
         with self._lock:
             self._left_gripper_state = float(msg.data) / 255.0
+            self._stamp("left_gripper")
             self._stamp("gripper")
 
     def _on_right_gripper_state(self, msg: Any) -> None:
         with self._lock:
             self._right_gripper_state = float(msg.data) / 255.0
+            self._stamp("right_gripper")
+            self._stamp("gripper")
 
     def _on_left_gripper_pose(self, msg: Any) -> None:
         with self._lock:
@@ -478,6 +481,18 @@ class H1RosClient:
             shape = self.config.camera_shapes.get(camera_name)
             if shape is not None:
                 height, width, _channels = shape
+                if self.config.require_ready_observations:
+                    source_height, source_width = image_rgb.shape[:2]
+                    if (
+                        source_height * width != source_width * height
+                        or height > source_height or width > source_width
+                    ):
+                        _logger.error(
+                            "Camera %s geometry %sx%s cannot be transported as %sx%s "
+                            "without stretching or upscaling",
+                            camera_name, source_height, source_width, height, width,
+                        )
+                        return None
                 if image_rgb.shape[:2] != (height, width):
                     image_rgb = cv2.resize(image_rgb, (width, height), interpolation=cv2.INTER_AREA)
 
@@ -611,6 +626,8 @@ class H1RosClient:
             keys.append("odom")
         if self.config.use_bumper_observation:
             keys.append("front_bumper")
+        if self.config.require_ready_observations and self.config.use_gripper:
+            keys.extend(("left_gripper", "right_gripper"))
         return tuple(dict.fromkeys(keys))
 
     def wait_for_first_observation(self, timeout_s: float | None = None) -> bool:

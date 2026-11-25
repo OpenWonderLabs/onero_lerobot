@@ -2,6 +2,9 @@
 
 适用于 Onero H1 / SwitchBot H1 ROS2 SDK 的 LeRobot 适配器。
 
+原生 PI0.5 推理、严格加载核验与可选 Kalman 输出滤波，见
+[LeRobot 0.6.1 PI0.5 推理指南](docs/native_pi05_inference.md)。
+
 本包将 H1 的 ROS2 话题封装为标准的 LeRobot `Robot` / `Teleoperator`，用于主从同构遥操数据采集。录制默认主动控制；加 `--passive` 为被动采集。
 
 ## 脚本总览

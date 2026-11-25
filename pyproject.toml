@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "lerobot_robot_onero_h1"
-version = "0.2.4"
+version = "0.2.5"
 description = "LeRobot adapter for the Onero H1 / SwitchBot H1 ROS2 SDK"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -51,6 +51,7 @@ onero-h1-replay-episode = "onero_h1_lerobot.cli.replay_episode:main"
 onero-h1-safe-test-action = "onero_h1_lerobot.cli.safe_test_action:main"
 onero-h1-lerobot-record = "onero_h1_lerobot.cli.lerobot_record:main"
 onero-h1-lerobot-rollout = "onero_h1_lerobot.cli.lerobot_rollout:main"
+onero-h1-pi05-rollout = "onero_h1_lerobot.cli.pi05_rollout:main"
 onero-h1-lerobot-teleoperate = "onero_h1_lerobot.cli.lerobot_teleoperate:main"
 
 [tool.hatch.build.targets.wheel]
