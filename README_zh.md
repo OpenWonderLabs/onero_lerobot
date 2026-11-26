@@ -12,6 +12,7 @@
 |---|---|
 | 新机器部署、接线、网络、环境激活和只读验收 | [部署指南](docs/setup.md) |
 | 遥操、数采、回放、可视化、训练与推理 | [使用指南](docs/usage.md) |
+| 原生 PI0.5 推理、实际权重核验与可选 Kalman 滤波 | [PI0.5 推理指南](docs/native_pi05_inference.md) |
 | MuJoCo 模型来源、H1 文件名与上游兼容性 | [模型说明](urdf/README.md) |
 | 现场操作参考 | [飞书 SOP](https://ihqz5dyhwa.feishu.cn/wiki/EC81wA9H0iuzOZkbM4bcu6b0nHd)（需权限） |
 
@@ -41,6 +42,7 @@ left_joint_1..7.pos, left_gripper.pos, right_joint_1..7.pos, right_gripper.pos
 ```
 
 即左臂 7 关节、左夹爪、右臂 7 关节、右夹爪。不含升降、头部、底盘、速度等额外标量通道；不提供可选 native/interleaved 布局。
+为兼容已有 SOP 命令，接受显式参数 `policy_feature_layout=interleaved`；其他布局值会被拒绝。
 相机默认 `head`、`left`、`right`，作为单独图像特征。底层 ROS 硬件命名由适配器转换。
 
 训练、数据集与 checkpoint 必须匹配维度、顺序、相机和预处理，禁止通过截断/补零强行使用不兼容权重。
@@ -54,6 +56,7 @@ left_joint_1..7.pos, left_gripper.pos, right_joint_1..7.pos, right_gripper.pos
 | 命令 / 脚本 | 用途 |
 |---|---|
 | `onero-h1-print-observation` | 只读观测，不自动启动主臂 |
+| `onero-h1-pi05-rollout` | 原生 PI05 推理，严格特征/反馈检查、实际加载权重核验与可选输出 Kalman 滤波 |
 | `onero-h1-record-episode` / `scripts/record.sh` | 独立控制线程与录制频率；支持主动/被动录制 |
 | `onero-h1-replay-episode` / `scripts/replay.sh` | 真机回放，自动遥操握手，与原生回放存在差异 |
 | `scripts/viz.sh` | 离线数据集可视化 |

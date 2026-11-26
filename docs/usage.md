@@ -19,6 +19,7 @@
 | `setup_ubuntu24_native.sh` | 部署工作站训练和完整仿真环境 | Ubuntu 24.04 + RTX 50 系列工作站 | 否 |
 | `run_sim_train_rollout.sh` | 自动完成仿真、数采、ACT 短训练和仿真 rollout | NVIDIA GPU 工作站 | 仅控制仿真 |
 | `onero-h1-lerobot-rollout` | 加载 checkpoint 执行策略推理 | Orin 或工作站 | 动作下发由 `send_action` 控制；另有启动/握手副作用 |
+| `onero-h1-pi05-rollout` | 原生 PI05 推理、实际权重核验与可选 Kalman 滤波 | Orin 或工作站 | `send_action=true` 时；禁用自动主臂启动和遥操握手 |
 
 所有命令均从项目根目录执行。
 
@@ -38,6 +39,7 @@ left_joint_1..7.pos, left_gripper.pos, right_joint_1..7.pos, right_gripper.pos
 ```
 
 不支持通过 `policy_feature_layout=native` 切换；不含升降、头部、底盘或速度通道。
+为兼容已有 SOP，机器人和遥操配置接受显式 `policy_feature_layout=interleaved`，不提供其他布局选择。
 相机是单独的图像特征。
 
 ### 底层接口说明
@@ -437,6 +439,12 @@ bash scripts/run_sim_train_rollout.sh
 `SUCCESS.txt`。这是一条开发验证流水线，不应在只负责数采和推理的 Orin 上执行训练。
 
 ## 模型 Rollout
+
+原生 PI0.5 部署可使用新增的 `onero-h1-pi05-rollout`，流程见
+[PI0.5 推理指南](native_pi05_inference.md)。该入口复用官方 LeRobot 0.6.1，
+在策略启动前核验实际加载权重，并严格检查 16 维契约、相机几何和反馈新鲜度；
+自动关闭主臂节点启动与遥操握手，输出 Kalman 需显式开启。
+指南提供独立的真实观测无动作检查；原有 rollout 命令仍保留原生加载行为。
 
 Rollout 不需要启动遥操程序：策略模型取代 Teleoperator 生成 action。真机运行时必须停止其他会向
 `/record_data` 或 `/joystick_info` 发布控制命令的节点，保证每个控制话题只有一个预期发布者。

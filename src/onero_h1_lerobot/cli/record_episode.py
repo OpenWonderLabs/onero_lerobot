@@ -10,7 +10,6 @@ import threading
 import time
 from datetime import datetime
 
-
 from onero_h1_lerobot import OneroH1Config, OneroH1Robot
 from onero_h1_lerobot.teleoperator import OneroH1RosJointTeleop, OneroH1RosJointTeleopConfig
 

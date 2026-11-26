@@ -62,6 +62,7 @@ class OneroH1RosJointTeleopConfig(TeleoperatorConfig):
     # Action diff — frame-to-frame action position delta (computed locally).
     # Disabled by default: the robot only accepts the fixed 16-dim policy action.
     use_action_diff: bool = False
+    policy_feature_layout: str = "interleaved"
 
     left_arm_joint_names: tuple[str, ...] = DEFAULT_LEFT_ARM_JOINTS
     right_arm_joint_names: tuple[str, ...] = DEFAULT_RIGHT_ARM_JOINTS

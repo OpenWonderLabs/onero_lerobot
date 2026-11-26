@@ -37,6 +37,7 @@ class Publisher:
 
 def make_robot(*, send_action=False, **kwargs):
     config = OneroH1Config(
+        policy_feature_layout="interleaved",
         use_lift=False,
         use_cameras=False,
         send_action=send_action,
@@ -60,7 +61,9 @@ def make_robot(*, send_action=False, **kwargs):
 
 def test_model_state_action_and_teleop_have_identical_names_and_order():
     robot, _ = make_robot()
-    teleop = OneroH1RosJointTeleop(OneroH1RosJointTeleopConfig())
+    teleop = OneroH1RosJointTeleop(
+        OneroH1RosJointTeleopConfig(policy_feature_layout="interleaved")
+    )
     assert robot.action_feature_names == MODEL_ORDER
     assert teleop.action_feature_names == MODEL_ORDER
     assert tuple(robot.observation_features) == MODEL_ORDER
@@ -100,7 +103,9 @@ def test_unknown_action_names_are_rejected_before_publication():
 
 
 def test_teleop_converts_real_callback_values_to_the_model_order():
-    cfg = OneroH1RosJointTeleopConfig(smooth_arm_actions=False, use_action_diff=False)
+    cfg = OneroH1RosJointTeleopConfig(
+        policy_feature_layout="interleaved", smooth_arm_actions=False, use_action_diff=False
+    )
     teleop = OneroH1RosJointTeleop(cfg)
     teleop._connected = True
     for side, positions in [("left", LEFT), ("right", RIGHT)]:
@@ -116,6 +121,8 @@ def test_teleop_converts_real_callback_values_to_the_model_order():
 @pytest.mark.parametrize(
     "settings",
     [
+        {"policy_feature_layout": "typo"},
+        {"policy_feature_layout": "native"},
         {"use_left_arm": False},
         {"use_right_arm": False},
         {"use_gripper": False},
@@ -131,7 +138,7 @@ def test_teleop_converts_real_callback_values_to_the_model_order():
     "config_type,device_type", [(OneroH1Config, OneroH1Robot), (OneroH1RosJointTeleopConfig, OneroH1RosJointTeleop)]
 )
 def test_invalid_layout_is_rejected_before_connecting(config_type, device_type, settings):
-    options = {"use_lift": False, **settings}
+    options = {"policy_feature_layout": "interleaved", "use_lift": False, **settings}
     with pytest.raises(ValueError):
         device_type(config_type(**options))
 
@@ -171,3 +178,85 @@ def test_native_lerobot_flattens_observations_and_labels_actions_in_model_order(
     robot.send_action(action)
     assert client._pub_record_data.messages[0][:7] == pytest.approx(LEFT)
     assert client._pub_record_data.messages[0][14:21] == pytest.approx(RIGHT)
+
+
+def test_kalman_is_output_only_and_passive_mode_never_advances_it():
+    robot, client = make_robot(action_filter="kalman")
+    robot.send_action({"action": MODEL_VALUES})
+    assert robot._action_filter._states == {}
+    assert client._pub_record_data.messages == []
+    assert client._pub_gripper.messages == []
+
+
+def test_kalman_is_applied_once_before_the_existing_safety_limiter():
+    robot, client = make_robot(send_action=True, action_filter="kalman")
+    requested = dict(zip(MODEL_ORDER, MODEL_VALUES, strict=True))
+    requested["left_joint_2.pos"] = 1.0
+    sent = robot.send_action(requested)
+    assert LEFT[1] < sent["left_joint_2.pos"] < 1.0
+    assert client._pub_record_data.messages[0][1] == sent["left_joint_2.pos"]
+    assert tuple(sent) == MODEL_ORDER
+
+
+@pytest.mark.parametrize("active", [False, True])
+def test_nonfinite_policy_output_never_reaches_publishers(active):
+    robot, client = make_robot(send_action=active)
+    values = [*MODEL_VALUES]
+    values[2] = float("nan")
+    with pytest.raises(ValueError, match="non-finite"):
+        robot.send_action({"action": values})
+    assert client._pub_record_data.messages == []
+    assert client._pub_gripper.messages == []
+
+
+@pytest.mark.parametrize("fault", [None, "missing-left", "stale-right"])
+def test_strict_feedback_tracks_each_gripper_independently(monkeypatch, fault):
+    robot, client = make_robot(
+        send_action=True, require_ready_observations=True, fill_missing_images=False,
+    )
+    monkeypatch.setattr("onero_h1_lerobot.robot.now_monotonic", lambda: 100.0)
+    client._stamps = dict.fromkeys(("left_arm", "right_arm", "left_gripper", "right_gripper"), 100.0)
+    if fault == "missing-left":
+        client._stamps.pop("left_gripper")
+    if fault == "stale-right":
+        client._stamps["right_gripper"] = 90.0
+    client._stamps["gripper"] = 100.0  # A shared timestamp must not mask either failure.
+    if fault:
+        with pytest.raises(TimeoutError, match="gripper"):
+            robot.send_action({"action": MODEL_VALUES})
+        assert client._pub_record_data.messages == []
+        assert client._pub_gripper.messages == []
+    else:
+        assert list(robot.get_observation().values()) == pytest.approx(MODEL_VALUES)
+
+
+def test_gripper_callbacks_stamp_both_sources():
+    client = H1RosClient(OneroH1Config())
+    client._on_left_gripper_state(SimpleNamespace(data=100))
+    assert "left_gripper" in client.snapshot(False)["stamps"]
+    assert "right_gripper" not in client.snapshot(False)["stamps"]
+    client._on_right_gripper_state(SimpleNamespace(data=200))
+    assert "right_gripper" in client.snapshot(False)["stamps"]
+
+
+def test_strict_warmup_failure_disconnects_without_publishing(monkeypatch):
+    events = []
+    client = SimpleNamespace(
+        is_connected=True,
+        connect=lambda: events.append("connect"),
+        wait_for_first_observation=lambda _timeout: False,
+        disconnect=lambda: events.append("disconnect"),
+    )
+    monkeypatch.setattr("onero_h1_lerobot.robot.H1RosClient", lambda _config: client)
+    robot = OneroH1Robot(OneroH1Config(
+        auto_start_arm_node=False,
+        auto_enter_teleop=True,
+        require_ready_observations=True,
+        fill_missing_images=False,
+    ))
+    monkeypatch.setattr(robot, "enter_teleop_mode", lambda: pytest.fail("teleop handshake sent"))
+    with pytest.raises(TimeoutError, match="not ready"):
+        robot.connect()
+    assert events == ["connect", "disconnect"]
+    assert robot.client is None
+    assert not robot.is_connected

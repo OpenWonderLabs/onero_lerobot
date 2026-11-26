@@ -12,6 +12,7 @@ A LeRobot `Robot` / `Teleoperator` adapter for the Onero H1 / SwitchBot H1 ROS 2
 |---|---|
 | Installation, wiring, networking, activation and read-only acceptance | [Setup guide](docs/setup.md) (Chinese) |
 | Teleoperation, recording, replay, visualization, training and rollout | [Usage guide](docs/usage.md) (Chinese) |
+| Native PI0.5 rollout, loaded-weight verification and optional Kalman filtering | [PI0.5 inference guide](docs/native_pi05_inference.md) (Chinese) |
 | H1 model files, provenance and upstream compatibility | [Robot model](urdf/README.md) |
 | Field operations reference | [Feishu SOP](https://ihqz5dyhwa.feishu.cn/wiki/EC81wA9H0iuzOZkbM4bcu6b0nHd) (access required) |
 
@@ -41,6 +42,7 @@ left_joint_1..7.pos, left_gripper.pos, right_joint_1..7.pos, right_gripper.pos
 ```
 
 Seven left joints, left gripper, seven right joints, right gripper. Lift, head, base and velocity channels are excluded from the scalar policy schema. There is no selectable native/interleaved mode.
+`policy_feature_layout=interleaved` is accepted as a compatibility argument for existing SOP commands; other layout values are rejected.
 Default cameras are `head`, `left`, `right`, exposed as separate image features. The adapter translates hardware names to the ROS interfaces.
 
 Datasets, training and checkpoints must agree on feature order, cameras and preprocessing. Do not truncate or pad incompatible checkpoints.
@@ -54,6 +56,7 @@ Additional collection/debugging tools:
 | Command / script | Purpose |
 |---|---|
 | `onero-h1-print-observation` | Read observations without automatically starting the leader arm |
+| `onero-h1-pi05-rollout` | Native PI05 rollout with strict feature/feedback checks, actual loaded-weight verification and optional output Kalman filtering |
 | `onero-h1-record-episode` / `scripts/record.sh` | Separate control and recording rates; active/passive collection |
 | `onero-h1-replay-episode` / `scripts/replay.sh` | Real-robot replay with automatic teleop handshake; differs from native replay |
 | `scripts/viz.sh` | Offline dataset visualization |

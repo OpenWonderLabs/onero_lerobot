@@ -125,6 +125,9 @@ class OneroH1Config(RobotConfig):
     # Action diff (computed locally) — frame-to-frame action position delta
     use_action_diff: bool = True
 
+    # Fixed 16-channel arm/gripper schema; kept explicit for SOP CLI compatibility.
+    policy_feature_layout: str = "interleaved"
+
     # Whether to publish control commands to the robot.
     # Recording enables this by default; use --passive for passive recording.
     send_action: bool = field(
@@ -136,6 +139,14 @@ class OneroH1Config(RobotConfig):
     # Default onero_leader behavior; disable with --no-gripper-action.
     send_gripper_action: bool = True
 
+    # Optional output filtering. Native LeRobot keeps ownership of action
+    # chunking/RTC; this filter runs once per published position command.
+    action_filter: str = "none"
+    action_filter_fps: float = 30.0
+    kalman_process_variance: float = 0.5
+    kalman_threshold: float = 0.075
+    kalman_jump_variance: float = 15.0
+
     # Camera configuration. Keys become LeRobot image feature names.
     use_cameras: bool = True
     camera_names: tuple[str, ...] = ("head", "left", "right")
@@ -145,6 +156,9 @@ class OneroH1Config(RobotConfig):
     )
     resize_camera_images: bool = True
     fill_missing_images: bool = True
+    # Deployment opt-in: reject missing/stale feedback and camera geometry that
+    # would stretch the received frame. The guarded PI05 CLI enables this.
+    require_ready_observations: bool = False
     # Each camera keeps only the latest compressed ROS frame in the adapter.
     # Decoding runs asynchronously at this maximum rate; set <= 0 for no explicit cap.
     camera_decode_hz: float = 30.0

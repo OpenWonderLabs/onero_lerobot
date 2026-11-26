@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import logging
+import math
 import time
 from typing import Any
 
 import numpy as np
 
+from .action_filter import ActionFilter
 from .arm_node import ArmNodeLauncher, resolve_remaps
 from .compat import Robot, RobotAction, RobotObservation
 from .config import OneroH1Config
@@ -39,6 +41,12 @@ class OneroH1Robot(Robot):
         self._policy_feature_map = make_policy_feature_map(config)
         self.client: H1RosClient | None = None
         self._limiter = ActionLimiter(config)
+        self._action_filter = ActionFilter(config)
+        if config.require_ready_observations:
+            if config.fill_missing_images:
+                raise ValueError("require_ready_observations requires fill_missing_images=false")
+            if not math.isfinite(config.stale_observation_s) or config.stale_observation_s <= 0:
+                raise ValueError("stale_observation_s must be finite and positive")
         self._arm_node_launcher: ArmNodeLauncher | None = None
         self._teleop_mode_active = False
         self.cameras = {name: None for name in config.camera_names} if config.use_cameras else {}
@@ -149,6 +157,7 @@ class OneroH1Robot(Robot):
         if self.is_connected:
             return
         _logger.info("OneroH1Robot connecting...")
+        self._action_filter.reset()
         if self.config.auto_start_arm_node:
             remaps = resolve_remaps(self.config.arm_node_mode)
             self._arm_node_launcher = ArmNodeLauncher(
@@ -160,6 +169,8 @@ class OneroH1Robot(Robot):
         try:
             self.client.connect()
             ready = self.client.wait_for_first_observation(self.config.connect_timeout_s)
+            if self.config.require_ready_observations and not ready:
+                raise TimeoutError("Required robot feedback and decoded cameras are not ready")
             if self.config.use_cameras and not ready:
                 _logger.warning(
                     "Camera warm-up timed out (%.1fs). Missing camera frames will be filled with zeros. "
@@ -328,6 +339,7 @@ class OneroH1Robot(Robot):
     def get_observation(self) -> RobotObservation:
         client = self._require_connected()
         snap = client.snapshot()
+        self._validate_snapshot(snap)
         obs: dict[str, Any] = self._scalar_observation_from_snapshot(snap)
 
         if self.config.use_observation_diff:
@@ -340,13 +352,48 @@ class OneroH1Robot(Robot):
             images: dict[str, np.ndarray] = snap["images"]
             for camera_name in self.config.camera_names:
                 if camera_name in images:
-                    obs[camera_name] = images[camera_name]
+                    image = images[camera_name]
+                    if self.config.require_ready_observations and (
+                        not isinstance(image, np.ndarray) or image.dtype != np.uint8
+                        or image.shape != tuple(self.config.camera_shapes[camera_name])
+                    ):
+                        raise ValueError(f"Invalid RGB camera observation: {camera_name}")
+                    obs[camera_name] = image
                     continue
+                if self.config.require_ready_observations:
+                    raise TimeoutError(f"Missing decoded camera: {camera_name}")
                 if self.config.fill_missing_images:
                     shape = self.config.camera_shapes[camera_name]
                     obs[camera_name] = np.zeros(shape, dtype=np.uint8)
 
         return export_policy_features(obs, self._policy_feature_map)
+
+    def _validate_snapshot(self, snap: dict[str, Any]) -> None:
+        if not self.config.require_ready_observations:
+            return
+        now = now_monotonic()
+        required = list(self._require_connected()._required_warmup_keys())
+        if self.config.use_cameras:
+            required.extend(f"camera.{name}.decoded" for name in self.config.camera_names)
+        stamps = snap.get("stamps", {})
+        for key in required:
+            stamp = stamps.get(key)
+            if (
+                stamp is None or not math.isfinite(stamp) or stamp > now
+                or now - stamp > self.config.stale_observation_s
+            ):
+                raise TimeoutError(f"Missing or stale observation: {key}")
+        joint_positions = snap.get("joint_pos", {})
+        names = (
+            *(self.config.left_arm_joint_names if self.config.use_left_arm else ()),
+            *(self.config.right_arm_joint_names if self.config.use_right_arm else ()),
+        )
+        if any(name not in joint_positions or not math.isfinite(joint_positions[name]) for name in names):
+            raise ValueError("Observation contains missing or non-finite arm positions")
+        if self.config.use_gripper:
+            for key in ("left_gripper_state", "right_gripper_state"):
+                if not math.isfinite(snap[key]) or not 0 <= snap[key] <= 1:
+                    raise ValueError(f"Invalid gripper observation: {key}")
 
     def _arm_positions_from_action(
         self,
@@ -493,8 +540,13 @@ class OneroH1Robot(Robot):
         # Teleop may attach frame-to-frame ``.diff`` metrics; they are not commands.
         normalized = {key: value for key, value in normalized.items() if not key.endswith(".diff")}
         normalized = policy_action_to_hardware(normalized, self._policy_feature_map)
+        self._action_filter.validate(normalized)
         snap = client.snapshot(include_images=False)
+        self._validate_snapshot(snap)
         observation = self._scalar_observation_from_snapshot(snap)
+
+        if self.config.send_action:
+            normalized = self._action_filter.apply(normalized, observation)
 
         arm_command_mode = self.config.arm_command_mode.lower()
         if arm_command_mode == "record_data" and not self.config.record_data_apply_delta_limit:
@@ -514,6 +566,8 @@ class OneroH1Robot(Robot):
 
         if not self.config.send_action:
             return export_policy_features(clipped, self._policy_feature_map)
+
+        self._action_filter.accept_limited(clipped)
 
         left_positions: list[float] | None = None
         left_velocities: list[float] | None = None
@@ -627,3 +681,4 @@ class OneroH1Robot(Robot):
                 self._arm_node_launcher.stop()
                 self._arm_node_launcher = None
             self._limiter.reset()
+            self._action_filter.reset()
